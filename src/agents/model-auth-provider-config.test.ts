@@ -166,6 +166,36 @@ it("evaluates a captured provider without serializing the fleet config", () => {
   ).toHaveLength(0);
 });
 
+it("uses captured provider provenance without rescanning the live model catalog", () => {
+  const { config, provider } = createProviderConfig(100);
+  let catalogReads = 0;
+  for (const entry of provider.models) {
+    const name = entry.name;
+    Object.defineProperty(entry, "name", {
+      get() {
+        catalogReads += 1;
+        return name;
+      },
+    });
+  }
+  setRuntimeConfigSnapshot(config, structuredClone(config));
+  const resolver = createModelAuthAvailabilityResolver({
+    cfg: captureRuntimeConfig(config),
+    authStore: { version: 1, profiles: {} },
+    env: {},
+    metadataSnapshot: createPluginMetadataSnapshotFixture(),
+  });
+  catalogReads = 0;
+
+  for (const modelId of ["synthetic-0", "synthetic-99"]) {
+    expect(
+      resolver.evaluateRuntimeModelAuth("synthetic", { modelId, runtimeId: "openclaw" }),
+    ).toMatchObject({ availability: true, evidence: "provider-config" });
+  }
+
+  expect(catalogReads).toBe(0);
+});
+
 it("rechecks managed provider credentials after snapshot replacement", () => {
   const { config } = createProviderConfig();
   publishProvider(config);

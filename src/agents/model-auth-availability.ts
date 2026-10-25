@@ -9,6 +9,7 @@ import {
 } from "@openclaw/normalization-core/string-coerce";
 import { resolveAgentModelPrimaryValue } from "../config/model-input.js";
 import { resolveMergedModelProviderConfig } from "../config/model-provider-config.js";
+import { getRuntimeConfigCapture } from "../config/runtime-config-capture-state.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type {
   ProviderModelRouteAuthRequirement,
@@ -190,6 +191,8 @@ function normalizeModelIdForProvider(provider: string, modelId: string): string 
 export function createModelAuthAvailabilityResolver(
   params: CreateModelAuthAvailabilityResolverParams,
 ): ModelAuthAvailabilityResolver {
+  // Captured catalog policy already owns its immutable authored source.
+  const sourceConfig = getRuntimeConfigCapture(params.cfg)?.source;
   const isPluginAuthProvider = (provider: string) =>
     resolveProviderAuthScope({
       provider,
@@ -277,7 +280,7 @@ export function createModelAuthAvailabilityResolver(
   // lifecycle. Provider-wide authority could bless an unrelated stale profile.
   const externalCliRefreshProfileIds = new Set(external.map((profile) => profile.profileId));
   const providerInput = (provider: string) =>
-    resolveProviderConfigSecretInput(params.cfg, provider);
+    resolveProviderConfigSecretInput(params.cfg, provider, sourceConfig);
   const prepareAuthTarget = (provider: string, ref: ModelAuthAvailabilityRef): AuthTarget => {
     const { providerConfig: configured } = providerInput(provider);
     const configuredModelId = ref.modelId
@@ -297,6 +300,7 @@ export function createModelAuthAvailabilityResolver(
   const providerBinding = (provider: string) =>
     resolveProviderEntryApiKeyProfileReference({
       cfg: params.cfg,
+      sourceConfig,
       provider,
       store,
     });
