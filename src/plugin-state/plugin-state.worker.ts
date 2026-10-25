@@ -166,8 +166,9 @@ export function readPluginStateCommand(
     }
     return {
       type: command.type,
-      result: err(
-        capturePluginStateWorkerFailure(
+      result: {
+        ok: false,
+        error: capturePluginStateWorkerFailure(
           wrapPluginStateError(
             error,
             description.operation,
@@ -176,7 +177,7 @@ export function readPluginStateCommand(
             store.path,
           ),
         ),
-      ),
+      },
     };
   }
 }

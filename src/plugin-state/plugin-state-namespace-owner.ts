@@ -56,8 +56,9 @@ const views = resolveGlobalSingleton(Symbol.for("openclaw.pluginStateNamespaceOw
       return;
     }
     const identity = change.kind === "unknown" ? change.identity : change.receipt.source.identity;
-    // oxlint-disable-next-line unicorn/no-useless-spread -- Snapshot keys so reinserted views are visited only once.
-    for (const id of [...entries.keys()]) {
+    // Snapshot keys so reinserted views are visited only once.
+    const namespaceIds = [...entries.keys()];
+    for (const id of namespaceIds) {
       const view = entries.peek(id);
       if (!view || view.identity !== identity) {
         continue;
