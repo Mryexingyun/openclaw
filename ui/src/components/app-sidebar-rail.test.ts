@@ -25,6 +25,7 @@ import { settleLitElement } from "../test-helpers/lit-settle.ts";
 import { mountSolid } from "../test-helpers/mount-solid.ts";
 import { waitForSolid } from "../test-helpers/solid-settle.ts";
 import { AppSidebar, getAppSidebarOwner } from "./app-sidebar.tsx";
+import { restoreSnapshotSession } from "./sidebar-snapshot-model.ts";
 import { installTitleTooltips } from "./tooltip-title.ts";
 import { dispatchMousePointer, settleTooltip } from "./tooltip.test-support.ts";
 
@@ -114,7 +115,7 @@ async function seed(sidebar: Sidebar, rows: Parameters<Sidebar["pinnedSessions"]
   await sidebar.updateComplete;
 }
 function cachedPin(key: string, label = "Saved title") {
-  return { key, label, pinned: true, isChild: false, children: [] };
+  return restoreSnapshotSession({ key, label, pinned: true, isChild: false, children: [] }, "");
 }
 async function pinLookup(key = "agent:other:unloaded", fallback = false) {
   const base = await fixture();
