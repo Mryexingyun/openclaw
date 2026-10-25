@@ -15,13 +15,15 @@ import {
   registerChatAttachmentPayload,
   releaseChatAttachmentPayload,
 } from "./attachment-payload-store.ts";
-import { ChatPaneRuntime } from "./chat-pane-render.ts";
 import {
   createGatewayBrowserClientFixture,
+  createSessionContext,
+} from "./chat-application-context.test-support.ts";
+import { ChatPaneRuntime } from "./chat-pane-render.ts";
+import {
   createSessionCapabilityFixture,
   createPaneTestHost,
   getPaneTestRuntime,
-  createSessionContext,
   createTestChatPane,
   type TestChatPane,
 } from "./chat-pane.test-support.ts";

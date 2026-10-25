@@ -21,12 +21,14 @@ import {
   SESSION_MUTATION_TEST_METHODS,
 } from "../../test-helpers/gateway-methods.ts";
 import { createStorageMock } from "../../test-helpers/storage.ts";
+import {
+  createGatewayBrowserClientFixture,
+  createInitializationContext,
+} from "./chat-application-context.test-support.ts";
 import { QUEUED_EDIT_RETENTION_CHANGE_EVENT } from "./chat-page-retained-sessions.ts";
 import { createMountedPanes } from "./chat-pane-mounted.test-support.ts";
 import { ChatPaneRuntime } from "./chat-pane-render.ts";
 import {
-  createGatewayBrowserClientFixture,
-  createInitializationContext,
   createPaneTestHost,
   getPaneTestRuntime,
   createTestChatPane,

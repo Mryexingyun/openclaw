@@ -8,6 +8,8 @@ import { settleLitElement } from "../../test-helpers/lit-settle.ts";
 import {
   createGatewayBrowserClientFixture,
   createInitializationContext,
+} from "./chat-application-context.test-support.ts";
+import {
   createRenderTestChatPane,
   connectPaneTestView,
   type TestChatPane,

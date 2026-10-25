@@ -14,14 +14,16 @@ import { createApplicationContextProvider } from "../../test-helpers/application
 import { gatewayHelloForMethods } from "../../test-helpers/gateway-methods.ts";
 import { mountSolid } from "../../test-helpers/mount-solid.ts";
 import { waitForSolid } from "../../test-helpers/solid-settle.ts";
-import { setChatHistoryLoad } from "./chat-history-state.ts";
-import { consumePaneSessionHandoff } from "./chat-pane-shared.ts";
 import {
   createGatewayBrowserClientFixture,
   createInitializationContext,
+  createSessionContext,
+} from "./chat-application-context.test-support.ts";
+import { setChatHistoryLoad } from "./chat-history-state.ts";
+import { consumePaneSessionHandoff } from "./chat-pane-shared.ts";
+import {
   createRenderTestChatPane,
   createSessionCapabilityFixture,
-  createSessionContext,
   createTestChatPane,
   connectPaneTestView,
   type TestChatPane,

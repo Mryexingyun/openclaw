@@ -18,6 +18,10 @@ import { sessionsResult } from "../../lib/sessions/session-capability.test-suppo
 import { createApplicationGateway } from "../../test-helpers/application-context.ts";
 import { gatewayHelloForMethods } from "../../test-helpers/gateway-methods.ts";
 import { mountSolid } from "../../test-helpers/mount-solid.ts";
+import {
+  createGatewayBrowserClientFixture,
+  createInitializationContext,
+} from "./chat-application-context.test-support.ts";
 import { projectChatFields } from "./chat-field-projection.ts";
 import {
   account,
@@ -29,12 +33,7 @@ import {
 } from "./chat-github-publication.test-support.ts";
 import { resetChatHistoryProjection } from "./chat-history-state.ts";
 import { makeChatHost } from "./chat-host.test-support.ts";
-import {
-  createGatewayBrowserClientFixture,
-  createInitializationContext,
-  createRenderTestChatPane,
-  createTestChatPane,
-} from "./chat-pane.test-support.ts";
+import { createRenderTestChatPane, createTestChatPane } from "./chat-pane.test-support.ts";
 import { handlePageGatewayEvent } from "./chat-state-events.test-support.ts";
 import { reduceChatSessionProjection } from "./history-merge.ts";
 

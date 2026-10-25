@@ -8,12 +8,13 @@ import { createMockBoardProvider } from "../../test-helpers/board-provider.ts";
 import type { GatewayRequestHandler } from "../../test-helpers/gateway-client.ts";
 import { mountSolid } from "../../test-helpers/mount-solid.ts";
 import { waitForSolid } from "../../test-helpers/solid-settle.ts";
+import { createGatewayBrowserClientFixture } from "./chat-application-context.test-support.ts";
 import {
   createDetailsOutputsBinding,
   projectDetailsOutputs,
 } from "./chat-details-outputs-binding.ts";
 import type { ResolvedBoardView } from "./chat-pane-shared.ts";
-import { createGatewayBrowserClientFixture, createTestChatPane } from "./chat-pane.test-support.ts";
+import { createTestChatPane } from "./chat-pane.test-support.ts";
 import type { ChatDetailsOutputs } from "./components/chat-details-types.ts";
 import { ChatOutputsDesktop, ChatOutputsMobile } from "./components/chat-outputs.tsx";
 import { getSessionWorkspace } from "./components/chat-session-workspace-state.ts";

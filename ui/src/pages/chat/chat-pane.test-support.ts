@@ -12,40 +12,22 @@ import type {
   ControlUiSessionBranch,
   ControlUiSessionPullRequest,
 } from "../../../../src/gateway/control-ui-contract.js";
-import type {
-  GatewayBrowserClient,
-  GatewayEventFrame,
-  GatewayEventListener,
-} from "../../api/gateway.ts";
+import type { GatewayBrowserClient, GatewayEventFrame } from "../../api/gateway.ts";
 import type { GatewaySessionRow } from "../../api/types.ts";
-import { createApplicationTheme } from "../../app/bootstrap-theme.ts";
-import { createChatAttachmentHandoff } from "../../app/chat-attachment-handoff.ts";
-import { createChatSubmissions } from "../../app/chat-submissions.ts";
-import { createConnectionBootstrapCoordinator } from "../../app/connection-bootstrap.ts";
 import type { ApplicationContext } from "../../app/context.ts";
 import {
   disposeQuestionPromptState,
   handleQuestionPromptEvent,
 } from "../../app/question-prompt.ts";
-import { loadSettings } from "../../app/settings.ts";
 import type { SidebarSessionMutationResult } from "../../components/app-sidebar-session-types.ts";
-import { createAgentIdentityCapability } from "../../lib/agents/identity.ts";
-import { createAgentCapability } from "../../lib/agents/index.ts";
 import type { CatalogSessionKey } from "../../lib/sessions/catalog-key.ts";
-import { createSessionCapability, type SessionCapability } from "../../lib/sessions/index.ts";
-import { ControlUiPluginRuntime } from "../../plugins/control-ui-runtime.ts";
-import { createApplicationGatewaySnapshot } from "../../test-helpers/application-context-fixtures.ts";
-import { createNavigationPreferencesFixture } from "../../test-helpers/application-context.ts";
-import {
-  createTestGatewayClient,
-  type GatewayRequestHandler,
-} from "../../test-helpers/gateway-client.ts";
-import {
-  gatewayHelloForMethods,
-  SESSION_MUTATION_TEST_METHODS,
-  sessionMutationGatewayHello,
-} from "../../test-helpers/gateway-methods.ts";
+import type { SessionCapability } from "../../lib/sessions/index.ts";
+import { sessionMutationGatewayHello } from "../../test-helpers/gateway-methods.ts";
 import { mountSolid as mountSolidRoot } from "../../test-helpers/mount-solid.ts";
+import {
+  createInitializationContext,
+  createSessionContext,
+} from "./chat-application-context.test-support.ts";
 import type { createChatPaneRails } from "./chat-pane-rails.ts";
 import { ChatPaneRuntime } from "./chat-pane-render.ts";
 import {
@@ -260,235 +242,12 @@ export interface TestChatPane extends HTMLElement, PaneTestLifecycle {
   renderPaneHeader: ChatPaneRuntime["renderPaneHeader"];
 }
 
-type GatewayBrowserClientFixtureOverrides = Omit<Partial<GatewayBrowserClient>, "request"> & {
-  request?: GatewayRequestHandler;
-};
-
-export function createGatewayBrowserClientFixture(
-  overrides: GatewayBrowserClientFixtureOverrides = {},
-): GatewayBrowserClient {
-  const {
-    request = (method) => (method === "sessions.describe" ? { session: null } : {}),
-    ...properties
-  } = overrides;
-  const client = createTestGatewayClient(request);
-  for (const [key, value] of Object.entries(properties)) {
-    Object.defineProperty(client, key, { configurable: true, writable: true, value });
-  }
-  return client;
-}
-
-type FixtureContextServices =
-  | "theme"
-  | "agentIdentity"
-  | "agents"
-  | "sessions"
-  | "plugins"
-  | "connectionBootstrap"
-  | "chatAttachmentHandoff";
-
-function withLiveCapabilities(
-  context: Omit<ApplicationContext, FixtureContextServices> & { sessions?: SessionCapability },
-): ApplicationContext {
-  const chatAttachmentHandoff = createChatAttachmentHandoff(context.gateway);
-  const connectionBootstrap = createConnectionBootstrapCoordinator();
-  const synchronizeBootstrap = (snapshot: ApplicationContext["gateway"]["snapshot"]) =>
-    connectionBootstrap.synchronize({
-      client: snapshot.client,
-      connected: snapshot.phase === "connected",
-    });
-  synchronizeBootstrap(context.gateway.snapshot);
-  const stopBootstrap = context.gateway.subscribe(synchronizeBootstrap);
-  const theme = createApplicationTheme(
-    loadSettings(context.gateway.connection.gatewayUrl),
-    context.gateway,
-  );
-  const agents = createAgentCapability(context.gateway);
-  const sessions =
-    context.sessions ??
-    createSessionCapability(context.gateway, context.agentSelection, { connectionBootstrap });
-  const plugins = new ControlUiPluginRuntime(() => applicationContext);
-  onTestFinished(() => {
-    plugins.dispose();
-    stopBootstrap();
-    chatAttachmentHandoff.dispose();
-    connectionBootstrap.reset();
-    if (!context.sessions) {
-      sessions.dispose();
-    }
-    agents.dispose();
-    theme.dispose();
-  });
-  const applicationContext: ApplicationContext = {
-    ...context,
-    chatAttachmentHandoff,
-    connectionBootstrap,
-    navigation: createNavigationPreferencesFixture(),
-    theme,
-    agents,
-    sessions,
-    plugins,
-    agentIdentity: createAgentIdentityCapability(context.gateway),
-  };
-  return applicationContext;
-}
-
-export function createInitializationContext(client?: GatewayBrowserClient): ApplicationContext {
-  return withLiveCapabilities({
-    basePath: "",
-    gateway: {
-      snapshot: createApplicationGatewaySnapshot({
-        client: client ?? null,
-        phase: client ? "connected" : "stopped",
-      }),
-      subscribe: () => () => {},
-      subscribeEvents: () => () => {},
-      connection: {
-        gatewayUrl: loadSettings().gatewayUrl,
-        token: "",
-        bootstrapToken: "",
-        password: "",
-      },
-    },
-    config: {
-      subscribe: () => () => {},
-      current: {
-        assistantIdentity: {
-          agentId: null,
-          name: "Assistant",
-          avatar: null,
-          avatarStatus: null,
-          avatarReason: null,
-        },
-        serverVersion: null,
-        embedSandboxMode: "strict",
-        allowExternalEmbedUrls: false,
-        terminalEnabled: false,
-      },
-    },
-    agentSelection: {
-      state: { selectedId: "main" },
-      subscribe: () => () => {},
-    },
-    runtimeConfig: {
-      state: { configNeedsApply: false, configSnapshot: null },
-      ensureLoaded: async () => undefined,
-      ensureDisplayLoaded: async () => undefined,
-      subscribe: () => () => {},
-    },
-    placementStartup: {
-      get: () => null,
-      hasPendingTurn: () => false,
-      retry: () => undefined,
-      pause: () => undefined,
-      subscribe: () => () => {},
-    },
-    navigate: () => undefined,
-    chatSubmissions: createChatSubmissions(),
-  } as unknown as Omit<ApplicationContext, FixtureContextServices>);
-}
-
 export function nativeHistoryMessage(seq: number, text = `message ${seq}`) {
   return {
     role: seq % 2 === 0 ? "assistant" : "user",
     content: [{ type: "text", text }],
     __openclaw: { seq },
   };
-}
-
-export function createSessionContext(
-  client: GatewayBrowserClient,
-  sessions?: SessionCapability,
-): ApplicationContext & {
-  publishGatewaySnapshot: (snapshot: ApplicationContext["gateway"]["snapshot"]) => void;
-} {
-  const eventListeners = new Set<GatewayEventListener>();
-  const agentSelectionListeners = new Set<(state: { selectedId: string | null }) => void>();
-  const agentSelectionState = { selectedId: "main" as string | null };
-  const snapshotListeners = new Set<
-    (snapshot: ApplicationContext["gateway"]["snapshot"]) => void
-  >();
-  let snapshot: ApplicationContext["gateway"]["snapshot"] = createApplicationGatewaySnapshot({
-    client,
-    phase: "connected",
-    hello: gatewayHelloForMethods([
-      ...SESSION_MUTATION_TEST_METHODS,
-      "taskSuggestions.list",
-      "session.suggestions.list",
-    ]),
-  });
-  const context = withLiveCapabilities({
-    gateway: {
-      get snapshot() {
-        return snapshot;
-      },
-      connection: { gatewayUrl: "ws://example.test", token: "", bootstrapToken: "", password: "" },
-      eventLog: [],
-      subscribe: (listener: (snapshot: ApplicationContext["gateway"]["snapshot"]) => void) => {
-        snapshotListeners.add(listener);
-        return () => snapshotListeners.delete(listener);
-      },
-      subscribeEvents: (listener: GatewayEventListener) => {
-        eventListeners.add(listener);
-        return () => eventListeners.delete(listener);
-      },
-      subscribeEventLog: () => () => {},
-      connect: vi.fn(),
-      setSessionKey: vi.fn(),
-      start: vi.fn(),
-      stop: vi.fn(),
-      emitTestEvent: (event: GatewayEventFrame) => {
-        for (const listener of eventListeners) {
-          listener(event);
-        }
-      },
-    },
-    agentSelection: {
-      state: agentSelectionState,
-      set: (agentId: string | null) => {
-        agentSelectionState.selectedId = agentId;
-        for (const listener of agentSelectionListeners) {
-          listener(agentSelectionState);
-        }
-      },
-      subscribe: (listener: (state: { selectedId: string | null }) => void) => {
-        agentSelectionListeners.add(listener);
-        return () => agentSelectionListeners.delete(listener);
-      },
-    },
-    config: {
-      subscribe: () => () => {},
-      current: {
-        assistantIdentity: { name: "Molty" },
-        terminalEnabled: false,
-      },
-    },
-    runtimeConfig: {
-      state: { configNeedsApply: false, configSnapshot: null },
-      ensureLoaded: async () => undefined,
-      ensureDisplayLoaded: async () => undefined,
-      subscribe: () => () => {},
-    },
-    chatSubmissions: createChatSubmissions(),
-    nativeChatDrafts: { subscribe: () => () => undefined },
-    placementStartup: {
-      get: vi.fn(() => null),
-      hasPendingTurn: () => false,
-      pause: vi.fn(),
-      subscribe: () => () => {},
-    },
-    sessions,
-  } as unknown as Omit<ApplicationContext, FixtureContextServices> & {
-    sessions?: SessionCapability;
-  });
-  return Object.assign(context, {
-    publishGatewaySnapshot(next: ApplicationContext["gateway"]["snapshot"]) {
-      snapshot = next;
-      for (const listener of snapshotListeners) {
-        listener(next);
-      }
-    },
-  });
 }
 
 export function createPaneTestHost<R extends ChatPaneRuntime>(

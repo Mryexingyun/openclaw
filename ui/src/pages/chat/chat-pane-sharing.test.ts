@@ -14,8 +14,10 @@ import type { SessionRefreshOutcome } from "../../lib/sessions/session-capabilit
 import type { GatewayRequestHandler } from "../../test-helpers/gateway-client.ts";
 import {
   createGatewayBrowserClientFixture,
-  createSessionCapabilityFixture,
   createSessionContext,
+} from "./chat-application-context.test-support.ts";
+import {
+  createSessionCapabilityFixture,
   createTestChatPane,
   type TestChatPane,
 } from "./chat-pane.test-support.ts";

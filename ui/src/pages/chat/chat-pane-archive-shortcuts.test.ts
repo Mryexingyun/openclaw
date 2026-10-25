@@ -6,8 +6,8 @@ import type { GatewaySessionRow } from "../../api/types.ts";
 import { t } from "../../i18n/index.ts";
 import { sessionsResult } from "../../lib/sessions/session-capability.test-support.ts";
 import { showToast } from "../../lib/toast.ts";
+import { createGatewayBrowserClientFixture } from "./chat-application-context.test-support.ts";
 import {
-  createGatewayBrowserClientFixture,
   createSessionCapabilityFixture,
   createTestChatPane,
   type TestChatPane,

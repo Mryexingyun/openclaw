@@ -13,6 +13,7 @@ import { createMockBoardProvider } from "../../test-helpers/board-provider.ts";
 import { installDialogPolyfill } from "../../test-helpers/modal-dialog.ts";
 import { flush } from "../../test-helpers/solid-settle.ts";
 import { createStorageMock } from "../../test-helpers/storage.ts";
+import { createGatewayBrowserClientFixture } from "./chat-application-context.test-support.ts";
 import { renderComposerFixture } from "./chat-composer.test-support.ts";
 import type { ChatHistoryResult } from "./chat-history-snapshot.ts";
 import { getChatHistoryLoadState } from "./chat-history-state.ts";
@@ -29,7 +30,6 @@ import {
   preparePaneSessionHandoff,
 } from "./chat-pane-shared.ts";
 import {
-  createGatewayBrowserClientFixture,
   createSessionCapabilityFixture,
   createTestChatPane,
   createPaneTestHost,

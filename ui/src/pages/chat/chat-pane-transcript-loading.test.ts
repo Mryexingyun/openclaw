@@ -4,6 +4,10 @@ import { GatewayProtocolRequestTimeoutError } from "@openclaw/gateway-client/bro
 import { expect, it, onTestFinished, vi } from "vitest";
 import { createDeferred } from "../../../../test/helpers/promise.js";
 import { gatewayHelloForMethods } from "../../test-helpers/gateway-methods.ts";
+import {
+  createGatewayBrowserClientFixture,
+  createInitializationContext,
+} from "./chat-application-context.test-support.ts";
 import type { ChatHistoryResult } from "./chat-history-snapshot.ts";
 import { syncSelectedSessionMessageSubscription } from "./chat-history-subscription.ts";
 import { loadChatHistory } from "./chat-history.ts";
@@ -19,7 +23,7 @@ it("automatically restores live observation after a subscription timeout without
   const messages = [nativeHistoryMessage(2, "The node completed the work.")];
   let observing = false;
   const subscriptions: unknown[] = [];
-  const client = paneTest.createGatewayBrowserClientFixture({
+  const client = createGatewayBrowserClientFixture({
     request: async (method, params) => {
       if (method === "sessions.messages.subscribe") {
         subscriptions.push(params);
@@ -62,9 +66,9 @@ it("reports each transcript loading edge from the load owner", async () => {
   const pane = paneTest.createRenderTestChatPane();
   const responses = Array.from({ length: 2 }, () => createDeferred<ChatHistoryResult>());
   const pending = responses.map(({ promise }) => promise);
-  const client = paneTest.createGatewayBrowserClientFixture({ request: () => pending.shift() });
+  const client = createGatewayBrowserClientFixture({ request: () => pending.shift() });
   const context = {
-    ...paneTest.createInitializationContext(),
+    ...createInitializationContext(),
     sessions: paneTest.createSessionCapabilityFixture({
       state: { agentId: "main" },
       reconcile: vi.fn(),

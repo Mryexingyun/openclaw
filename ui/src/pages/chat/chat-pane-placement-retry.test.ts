@@ -13,10 +13,10 @@ import {
   createModalDialogTestFixture,
   waitForConfirmDialogActions,
 } from "../../test-helpers/modal-dialog.ts";
+import { createGatewayBrowserClientFixture } from "./chat-application-context.test-support.ts";
 import {
   activePlacementSession,
   createTestChatPane,
-  createGatewayBrowserClientFixture,
   createSessionCapabilityFixture,
 } from "./chat-pane.test-support.ts";
 

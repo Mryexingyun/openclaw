@@ -9,9 +9,9 @@ import {
   registerChatAttachmentPayload,
   releaseChatAttachmentPayloads,
 } from "./attachment-payload-store.ts";
+import { createInitializationContext } from "./chat-application-context.test-support.ts";
 import { findChatSendPayload, makeChatHost } from "./chat-host.test-support.ts";
 import { ChatPaneComposerHandoff } from "./chat-pane-attachment-handoff.ts";
-import { createInitializationContext } from "./chat-pane.test-support.ts";
 import { retryQueuedChatMessage } from "./chat-send-actions.ts";
 import { createChatState } from "./chat-state-controller.ts";
 import type { ChatPageHost } from "./chat-state-host.ts";
