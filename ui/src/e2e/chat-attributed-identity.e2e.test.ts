@@ -324,7 +324,20 @@ suite.define(() => {
               });
               await expect(peer.locator(".chat-sender-name"), label).toHaveText("Riley");
               await expect(peer.locator(".chat-group-footer"), label).toHaveCSS("opacity", "1");
-            } else {
+            }
+            const thread = pane.locator(".chat-thread");
+            if (height === 430) {
+              // The first message can leave the virtual window after new turns.
+              // Return to it before checking its attributed identity.
+              await waitForChatScrollIdle(page);
+              await thread.focus();
+              await thread.press("Home");
+              // Chromium drops a keyboard scroll that lands in the tail of the
+              // previous smooth one, so End must wait for Home to settle.
+              await waitForChatScrollIdle(page);
+              expect(await thread.evaluate((element) => element.scrollTop), label).toBe(0);
+            }
+            if (!profiled) {
               const own = pane.locator(".chat-group.user", {
                 hasText: "Keep the phone transcript readable.",
               });
@@ -332,13 +345,6 @@ suite.define(() => {
               await expect(own, label).toHaveCSS("justify-content", "end");
             }
             if (height === 430) {
-              const thread = pane.locator(".chat-thread");
-              await thread.focus();
-              await thread.press("Home");
-              // Chromium drops a keyboard scroll that lands in the tail of the
-              // previous smooth one, so End must wait for Home to settle.
-              await waitForChatScrollIdle(page);
-              expect(await thread.evaluate((element) => element.scrollTop), label).toBe(0);
               await thread.press("End");
               await expect
                 .poll(() => thread.evaluate((element) => element.scrollTop), { message: label })

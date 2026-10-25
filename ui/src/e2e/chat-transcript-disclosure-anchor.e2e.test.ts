@@ -953,6 +953,10 @@ suite.define(() => {
 
     await page.goto(`${suite.server.baseUrl}chat`);
     await waitForChatScrollIdle(page);
+    const thread = page.locator(".chat-pane-cache__pane--active .chat-thread");
+    await thread.focus();
+    await thread.press("PageUp");
+    await waitForChatScrollIdle(page);
     const userToggle = page
       .locator(".chat-message-disclosure")
       .filter({ hasText: "User disclosure anchor marker" })
