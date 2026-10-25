@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type {
@@ -14,6 +14,22 @@ import { detectVitestHostInfo } from "./vitest-local-scheduling.mts";
 
 function writeReceipt(kind: string, value: unknown) {
   process.stdout.write(`[vitest:${kind}] ${JSON.stringify(value)}\n`);
+}
+
+function readHostCpuSnapshot() {
+  let aggregateTicks: string | null = null;
+  if (process.platform === "linux") {
+    try {
+      // Retain guest steal ticks; cgroup CPU alone cannot identify host contention.
+      aggregateTicks = readFileSync("/proc/stat", "utf8").split("\n", 1)[0] ?? null;
+    } catch {
+      // CPU diagnostics remain optional on hosts without procfs access.
+    }
+  }
+  return {
+    cpus: os.cpus().map(({ model, speed }) => ({ model, speedMhz: speed })),
+    aggregateTicks,
+  };
 }
 
 // Collection replaces the queued module object; its id is a 32-bit hash.
@@ -76,6 +92,7 @@ export default class VitestResourceReporter implements Reporter {
       arch: process.arch,
       ...detectVitestHostInfo(),
       osLogicalCpuCount: os.cpus().length,
+      hostCpu: readHostCpuSnapshot(),
       rootMaxWorkers: ctx.config.maxWorkers ?? null,
       memoryCapacity: readProcessMemoryCapacity({}),
       cgroup: readProcessCgroupV2Snapshot(),
@@ -204,6 +221,7 @@ export default class VitestResourceReporter implements Reporter {
       // Cgroup rows include descendants; peaks are absolute and may predate this run.
       // This window starts at reporter initialization and ends before global teardown.
       cgroupElapsedMs: performance.now() - this.resourceStarted,
+      hostCpu: readHostCpuSnapshot(),
       cgroup: readProcessCgroupV2Snapshot(),
     });
   }

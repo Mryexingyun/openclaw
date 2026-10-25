@@ -193,9 +193,11 @@ export function readProcessCgroupV2Snapshot(params: MemoryLimitParams = {}) {
   const files = [
     "cpu.stat",
     "cpu.max",
+    "cpu.pressure",
     "memory.current",
     "memory.peak",
     "memory.events",
+    "memory.pressure",
     "cpuset.cpus.effective",
   ];
   return [...directories].map((directory) => ({
