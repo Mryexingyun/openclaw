@@ -120,6 +120,9 @@ Compact mocked Control UI E2E uses six 16-class jobs with four workers each,
 matching the four observed CPUs per runner and retaining 24 aggregate worker slots.
 Private source-server projects stay serial. The conditional browser-extension
 row, noncompact plans, and real-Gateway worker limits retain their existing rules.
+Browser suites that only exercise the rendered UI borrow the invocation's
+production bundle. Private source servers are reserved for source-module
+interception, custom build identities, or development-server contracts.
 
 The mocked Control UI sharder keeps four measured source fixtures that need
 compiled subprocesses together in one existing shard. Their combined timing
@@ -139,6 +142,11 @@ the verified production UI artifact and refreshes its own build identity before
 serving it. Protocol recovery also uses the producer’s built Gateway and retains
 its incompatible-protocol UI build. Local, compatibility, and frozen targets
 retain their ordinary preparation path.
+
+The exact Doctor plugin-index and SQLite sessions/transcripts built-CLI proofs
+use the runtime-only compiled-worker registry. The local TUI file does the same
+when its existing built-CLI mode is enabled; source TUI and broad, mixed, or
+custom selections retain the full registry.
 
 Real-Gateway UI shards have a 30-minute whole-job budget on the normal Blacksmith
 path. Successful 16-class jobs reached 19:04, leaving too little margin under the

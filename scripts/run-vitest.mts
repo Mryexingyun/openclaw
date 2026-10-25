@@ -55,6 +55,7 @@ import {
 import {
   resolveVitestRuntimeCliSelections,
   shouldPrepareVitestCoreWorkers,
+  shouldUseRuntimeOnlyVitestWorkers,
 } from "./lib/vitest-runtime-selection.mts";
 import {
   resolveNativeBunTestCommand,
@@ -1133,7 +1134,8 @@ export async function runVitest(
         getVitestWorkerDescriptor(),
         (canonicalSelection &&
           (relativeConfig === "test/vitest/vitest.ui-e2e.config.ts" ||
-            relativeConfig === "test/vitest/vitest.extension-browser.config.ts")) ||
+            relativeConfig === "test/vitest/vitest.extension-browser.config.ts" ||
+            shouldUseRuntimeOnlyVitestWorkers(relativeConfig, vitestArgs, invocationEnv))) ||
           (canonicalRootRun && relativeConfig === "test/vitest/vitest.ui-e2e-prebuilt.config.ts")
           ? "runtime"
           : "full",
