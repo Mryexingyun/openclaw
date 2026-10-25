@@ -282,6 +282,9 @@ export function createModelAuthAvailabilityResolver(
   const providerInput = (provider: string) =>
     resolveProviderConfigSecretInput(params.cfg, provider, sourceConfig);
   const prepareAuthTarget = (provider: string, ref: ModelAuthAvailabilityRef): AuthTarget => {
+    if (ref.api != null && ref.baseUrl != null) {
+      return ref;
+    }
     const { providerConfig: configured } = providerInput(provider);
     const configuredModelId = ref.modelId
       ? normalizeModelIdForProvider(provider, ref.modelId)
