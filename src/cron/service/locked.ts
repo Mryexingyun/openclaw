@@ -46,11 +46,7 @@ const resolveChain = (promise: Promise<unknown>) =>
   );
 
 /** Serializes operations by their actual SQLite partition and service-local order. */
-export async function locked<T>(
-  state: CronServiceState,
-  fn: () => Promise<T>,
-  opts?: { readOnly?: boolean },
-): Promise<T> {
+export async function locked<T>(state: CronServiceState, fn: () => Promise<T>): Promise<T> {
   const preparation = prepareCronServiceStore(state);
   if (preparation) {
     await preparation;
@@ -58,10 +54,6 @@ export async function locked<T>(
   const previous = state.op;
   const next = cronOperations.enqueue(state.deps.storeKey, async () => {
     await resolveChain(previous);
-    if (!opts?.readOnly) {
-      // Include scheduler-local changes that deliberately do not commit a store revision.
-      state.readSnapshot = undefined;
-    }
     return await fn();
   });
   state.op = resolveChain(next);

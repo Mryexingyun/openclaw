@@ -363,7 +363,7 @@ export type CronJobPolicyContext = {
 export type CronServiceState = {
   deps: CronServiceDepsInternal;
   store: CronStoreFile | null;
-  /** Read facts share one generation across committed and scheduler-local mutations. */
+  /** Worker publications replace the source rows or advance the store revision. */
   readSnapshot?: {
     storeRevision: number;
     source: CronJob[] | undefined;
