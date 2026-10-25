@@ -706,7 +706,7 @@ it("redacts secret machine-state keys while retaining ordinary machine state", a
     "nodeHost.",
     "webPush.vapidKeys",
   ]);
-  expectDatabaseRows(restoredPath, {
+  expectDatabaseRows(restored.targetPath, {
     "SELECT state_key, value_json FROM config_machine_state ORDER BY state_key": [
       {
         state_key: "cron.defaultStoreKey",
