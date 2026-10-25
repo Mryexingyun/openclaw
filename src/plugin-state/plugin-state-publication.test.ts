@@ -294,9 +294,14 @@ describe("plugin state committed facts", () => {
       dispatch.mockClear();
       await large.register("4", value);
       expect(await large.count()).toBe(5);
-      expect(dispatch).toHaveBeenCalled();
+      expect(dispatch).toHaveBeenCalledTimes(2);
+      dispatch.mockClear();
+      expect(await large.count()).toBe(5);
+      expect(dispatch).toHaveBeenCalledOnce();
       await large.delete("4");
+      dispatch.mockClear();
       expect(await large.count()).toBe(4);
+      expect(dispatch).toHaveBeenCalledOnce();
       dispatch.mockClear();
       expect(await large.count()).toBe(4);
       expect(dispatch).not.toHaveBeenCalled();

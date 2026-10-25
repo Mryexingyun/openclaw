@@ -1,5 +1,6 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { deserialize, serialize } from "node:v8";
 import { threadId, Worker } from "node:worker_threads";
@@ -28,6 +29,7 @@ import {
   readMemoryHostEventRecords,
 } from "../plugin-sdk/memory-host-events.js";
 import { createDeferredCore } from "../shared/deferred.js";
+import { withArtifactPreservingStateReads } from "../state/artifact-preserving-state-reads.js";
 import { closeOpenClawStateDatabaseAsync } from "../state/openclaw-state-db-cache.js";
 import { openOpenClawStateDatabase } from "../state/openclaw-state-db.js";
 import { resolveOpenClawStateSqlitePath } from "../state/openclaw-state-db.paths.js";
@@ -130,6 +132,50 @@ it("keeps reads behind earlier writes", async ({ state }) => {
   await expect(store.lookup("b")).resolves.toBe("second");
   await pendingWrite;
 });
+
+it.for([false, true])(
+  "inspects durable plugin-state bytes with a warm resident view: %s",
+  async (warm, { state }) => {
+    const pluginId = "inspection-fixture";
+    const namespace = "inspection-source";
+    const store = createPluginStateKeyedStore<string>(pluginId, {
+      namespace,
+      maxEntries: 1,
+      env: state.env,
+    });
+    await store.register("key", "persisted");
+    if (warm) {
+      expect(await store.lookup("key")).toBe("persisted");
+    }
+    const databasePath = resolveOpenClawStateSqlitePath(state.env);
+    // Deliberate disk corruption without a host reader: inspection must use private durable bytes.
+    const writer = new DatabaseSync(databasePath);
+    try {
+      writer
+        .prepare(`UPDATE plugin_state_entries SET value_json = ? ${rowScope} AND entry_key = ?`)
+        .run("invalid JSON", pluginId, namespace, "key");
+    } finally {
+      writer.close();
+    }
+    const artifacts = () =>
+      ["", "-wal", "-shm"].map((suffix) => {
+        const pathname = databasePath + suffix;
+        return existsSync(pathname) ? readFileSync(pathname) : undefined;
+      });
+    const before = artifacts();
+    await expect(withArtifactPreservingStateReads(() => store.lookup("key"))).rejects.toMatchObject(
+      {
+        code: "PLUGIN_STATE_CORRUPT",
+        operation: "lookup",
+        path: databasePath,
+      },
+    );
+    expect(artifacts()).toEqual(before);
+    await closeOpenClawStateDatabaseAsync();
+    await store.register("key", "after-inspection");
+    expect(await store.lookup("key")).toBe("after-inspection");
+  },
+);
 
 it("checks cross-namespace leases in the write transaction", async ({ state }) => {
   const options = { namespace: "journal", maxEntries: 10, env: state.env };
@@ -747,6 +793,31 @@ describe.skipIf(!mixedAgentConnection)("PostgreSQL complete plugin-state views",
         { writeStores: [] },
       ),
     ).rejects.toMatchObject({ code: "PLUGIN_STATE_INVALID_INPUT" });
+    expect(reads).not.toHaveBeenCalled();
+
+    const oversized = createPluginStateKeyedStore<string>(scope.pluginId, {
+      namespace: "oversized",
+      maxEntries: 10,
+    });
+    const largeValue = "x".repeat(840_000);
+    withEngineStoreAdmission(() =>
+      seed(
+        scope.pluginId,
+        "oversized",
+        Array.from({ length: 5 }, (_, index) => ({ key: String(index), value: largeValue })),
+      ),
+    );
+    expect(await oversized.count()).toBe(5);
+    expect(reads).toHaveBeenCalledTimes(2);
+    reads.mockClear();
+    expect(await oversized.count()).toBe(5);
+    expect(reads).toHaveBeenCalledOnce();
+    await oversized.delete("4");
+    reads.mockClear();
+    expect(await oversized.count()).toBe(4);
+    expect(reads).toHaveBeenCalledOnce();
+    reads.mockClear();
+    expect(await oversized.count()).toBe(4);
     expect(reads).not.toHaveBeenCalled();
   });
 });

@@ -93,13 +93,13 @@ test("workspace enumeration isolates corrupt neighbors while preserving order an
        WHERE plugin_id = 'memory-core' AND namespace = ? AND entry_key LIKE ?`,
     )
     .run(scope.namespace, `${prefix}%`);
-  const corrupt = (prefix: string) =>
+  const corrupt = (keyPrefix: string) =>
     database.db
       .prepare(
         `UPDATE plugin_state_entries SET value_json = '{'
      WHERE plugin_id = 'memory-core' AND namespace = ? AND entry_key LIKE ?`,
       )
-      .run(scope.namespace, `${prefix}%`);
+      .run(scope.namespace, `${keyPrefix}%`);
   corrupt(foreignPrefix);
 
   // Equal timestamps retain stored-key order: SHA-256(c) sorts before SHA-256(b).

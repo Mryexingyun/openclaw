@@ -139,6 +139,7 @@ const receipts = Array.from({ length: receiptCount }, (_, index) => {
   };
 });
 let polls = 0;
+const mailArrivalsMs: number[] = [];
 let deliveredThrough = 0;
 let acknowledgments = 0;
 let unexpectedRequests = 0;
@@ -162,6 +163,7 @@ const relay = createServer((req, res) => {
       }),
     );
   } else if (url.pathname === "/v1/mail") {
+    mailArrivalsMs.push(performance.now());
     polls++;
     const after = Number(url.searchParams.get("after") ?? 0);
     deliveredThrough = Math.max(deliveredThrough, after);
@@ -446,6 +448,12 @@ try {
       expiredPeer: values["expired-peer"],
       expiredAuditOrphan: values["expired-audit-orphan"],
       durationMs,
+      timing: {
+        initialHealthProbe: initial,
+        steadyStartedMs: started,
+        steadyEndedMs: started + durationMs,
+        mailArrivalsMs,
+      },
       initialPolls,
       steadyPolls: polls - initialPolls,
       acknowledgments,

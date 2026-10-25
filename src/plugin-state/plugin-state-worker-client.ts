@@ -16,6 +16,7 @@ import type {
   SqliteWorkerAdmissionFactory,
   SqliteWorkerAdmissionRequest,
 } from "../infra/sqlite-worker-operation-admission.js";
+import { isArtifactPreservingStateRead } from "../state/artifact-preserving-state-reads.js";
 import { openClawStateDatabaseCache } from "../state/openclaw-state-db-cache.js";
 import { executeExistingOpenClawStateRead } from "../state/openclaw-state-db-readonly.js";
 import { resolveOpenClawStateSqlitePath } from "../state/openclaw-state-db.paths.js";
@@ -228,6 +229,7 @@ async function execute<Key extends keyof PluginStateWorkerOperations>(
       typedCommand.input.writeStores.length === 0;
     if (
       !currentEntries &&
+      !isArtifactPreservingStateRead("shared", databasePath) &&
       (readOperation ||
         typedCommand.type === "pluginState.observe" ||
         typedCommand.type === "pluginState.lookup" ||

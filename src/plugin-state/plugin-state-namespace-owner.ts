@@ -28,6 +28,10 @@ type View = {
 };
 export const PLUGIN_STATE_RESIDENT_NAMESPACES = 64;
 
+/**
+ * The DB-wide owner lease admits one live writer. Offline writers run with the Gateway
+ * stopped, and close/reopen retires views. Cross-host sharing of one store is unsupported.
+ */
 const views = resolveGlobalSingleton(Symbol.for("openclaw.pluginStateNamespaceOwner"), () => {
   const entries = new LruCache<View>(PLUGIN_STATE_RESIDENT_NAMESPACES, {
     maxBytes: 16 * 1024 * 1024,
@@ -142,9 +146,9 @@ export function ensurePluginStateNamespace(
       if (rows) {
         view.rows = new Map(rows.map((row) => [row.entry_key, row]));
         view.bytes += rows.reduce((bytes, row) => bytes + pluginStateNamespaceRowBytes(row), 0);
-        view.loading = undefined;
-        views.set(id, view);
       }
+      view.loading = undefined;
+      views.set(id, view);
     },
     (error: unknown) => {
       if (views.peek(id) === view) {
