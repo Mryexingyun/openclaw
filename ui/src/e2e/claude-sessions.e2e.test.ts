@@ -172,7 +172,7 @@ suite.define(() => {
         await expect
           .poll(() => catalogHeaderAffordances(header))
           .toMatchObject({
-            actionsOpacity: "0.55",
+            actionsOpacity: "1",
             actionsPointerEvents: "auto",
             chevronOpacity: "0.75",
             finePointer: true,
@@ -180,7 +180,7 @@ suite.define(() => {
             hoverCapable: true,
             hovered: true,
             providerOpacity: "0",
-            toolbarButtonOpacity: "0.55",
+            toolbarButtonOpacity: "1",
           });
         const hoverAffordances = await catalogHeaderAffordances(header);
         expect(hoverAffordances.actionsColor).toBe(hoverAffordances.toolbarButtonColor);
@@ -251,12 +251,12 @@ suite.define(() => {
         page.locator('[data-session-section="catalog:claude"] .sidebar-recent-sessions__head'),
       );
       expect(touchAffordance).toMatchObject({
-        actionsOpacity: "0.55",
+        actionsOpacity: "1",
         coarsePointer: true,
         noHover: true,
         providerOpacity: "0",
         chevronOpacity: "0.75",
-        toolbarButtonOpacity: "0.55",
+        toolbarButtonOpacity: "1",
       });
       expect(touchAffordance.actionsColor).toBe(touchAffordance.toolbarButtonColor);
     } finally {
