@@ -66,8 +66,8 @@ export const sqliteTestSingletonPublications: ReadonlyMap<string, readonly symbo
     ],
   ],
   [
-    source("src/plugin-state/plugin-state-observation-cache.ts"),
-    [Symbol.for("openclaw.pluginStateObservationCache")],
+    source("src/plugin-state/plugin-state-namespace-owner.ts"),
+    [Symbol.for("openclaw.pluginStateNamespaceOwner")],
   ],
   [
     source("src/agents/workspace-state-publication.ts"),

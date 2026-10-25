@@ -5,7 +5,10 @@ import { afterEach, expect, it, vi } from "vitest";
 import * as pluginState from "../plugin-state/plugin-state-store.js";
 import { resetPluginStateStoreForTests } from "../plugin-state/plugin-state-store.js";
 import { createDeferredCore } from "../shared/deferred.js";
-import { openOpenClawStateDatabase } from "../state/openclaw-state-db.js";
+import {
+  closeOpenClawStateDatabaseAsync,
+  openOpenClawStateDatabase,
+} from "../state/openclaw-state-db.js";
 import { withStateDirEnv } from "../test-helpers/state-dir-env.js";
 import {
   clearMemoryArtifactProvenance as clear,
@@ -66,7 +69,9 @@ test("lists one workspace in order and preserves corruption", async ({ tempRoot 
   }
   const other = { workspaceDir: path.join(tempRoot, "other"), relativePath: "memory/other.md" };
   await write(other, "", "synthetic other note", 1);
-  const { db } = openOpenClawStateDatabase();
+  // Raw fault injection models cold storage, outside the resident owner's lifetime.
+  await closeOpenClawStateDatabaseAsync();
+  let { db } = openOpenClawStateDatabase();
   // sqlite-allow-raw -- Seed historical ordering, expiry, and corruption at the storage boundary.
   db.prepare(
     `UPDATE plugin_state_entries SET
@@ -96,11 +101,15 @@ test("lists one workspace in order and preserves corruption", async ({ tempRoot 
   ]);
   expect(materializedKeys).toHaveLength(3);
   const selectedKey = expectDefined(materializedKeys[0], "selected provenance key");
+  await closeOpenClawStateDatabaseAsync();
+  ({ db } = openOpenClawStateDatabase());
   // sqlite-allow-raw -- Unrelated and expired malformed JSON must not poison this workspace.
   db.prepare(
     "UPDATE plugin_state_entries SET value_json = ? WHERE plugin_id = ? AND namespace = ? AND entry_key NOT IN (?, ?, ?)",
   ).run("{malformed", "core:memory-artifact-provenance", "workspace-files", ...materializedKeys);
   await expect(list({ workspaceDir })).resolves.toEqual(selected);
+  await closeOpenClawStateDatabaseAsync();
+  ({ db } = openOpenClawStateDatabase());
   // sqlite-allow-raw -- A selected corrupt row must still fail through the real worker reader.
   db.prepare(
     "UPDATE plugin_state_entries SET value_json = ? WHERE plugin_id = ? AND namespace = ? AND entry_key = ?",

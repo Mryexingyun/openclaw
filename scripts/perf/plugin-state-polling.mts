@@ -378,6 +378,7 @@ try {
       detached: true,
     },
   );
+  let shutdownFailed = false;
   try {
     const initial = await waitForInitialProbe({
       startAt: performance.now(),
@@ -460,12 +461,13 @@ try {
     try {
       const shutdown = await stopChild(child, { teardownGraceMs: 15_000 });
       writeFileSync(path.join(output, "shutdown.json"), JSON.stringify(shutdown, null, 2));
-      if (shutdown.exitCode !== 0 || shutdown.signal !== null) {
-        throw new Error("Gateway shutdown failed; inspect shutdown.json");
-      }
+      shutdownFailed = shutdown.exitCode !== 0 || shutdown.signal !== null;
     } finally {
       closeSync(log);
     }
+  }
+  if (shutdownFailed) {
+    throw new Error("Gateway shutdown failed; inspect shutdown.json");
   }
   if (receiptCount > 0 || values["audit-prefill"]) {
     try {
