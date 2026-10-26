@@ -153,8 +153,9 @@ path. Successful 16-class jobs reached 19:04, leaving too little margin under th
 former 20-minute limit. Hosted and retry paths retain their 40-minute budget;
 runner size, worker count, shard split, and individual test deadlines are unchanged.
 Current targets overlap desktop transport proof with the one-worker serial UI
-phase, then join both cleanup owners before running qualified fixtures with the
-existing two-worker ceiling. The serial and qualified phases share one prepared
+phase. The planner balances serial files across the two existing runners; each
+runner keeps those files serial and joins cleanup before qualified fixtures use
+its existing two-worker ceiling. The serial and qualified phases share one prepared
 worker generation when both run; the desktop carrier keeps its separate lifecycle,
 and the shared generation is disposed only after both borrowers join. One-worker
 overrides, desktop-only selections, and frozen targets retain sequential execution.
