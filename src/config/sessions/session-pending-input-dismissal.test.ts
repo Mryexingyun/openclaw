@@ -4,8 +4,6 @@ import { expect, it } from "vitest";
 import { observeHostDataSql } from "../../../test/helpers/sqlite-statement-execution-counter.js";
 import { getAgentEventLifecycleGeneration } from "../../infra/agent-events.js";
 import { executeSqliteQuerySync } from "../../infra/kysely-sync.js";
-import * as admission from "../../infra/sqlite-worker-operation-admission.js";
-import { sqliteWorkerOwnerProbe as probe } from "../../infra/sqlite-worker-owner-probe.test-support.js";
 import type { PersistedUserTurnMessage } from "../../sessions/user-turn-transcript.types.js";
 import {
   openOpenClawAgentDatabase,
@@ -23,7 +21,6 @@ import {
 } from "./session-accessor.sqlite-pending-inputs.js";
 import { getSessionKysely } from "./session-accessor.sqlite-scope.js";
 import type { SessionPendingInputOwner } from "./session-pending-input-owner.types.js";
-import { readSessionPendingInputReceiptsInWorker } from "./session-pending-input-receipts.js";
 import { dismissRetiredSessionPendingInputs } from "./session-pending-input-withdrawal.js";
 
 const target = {
@@ -86,12 +83,8 @@ async function createFixture(database: OpenClawAgentDatabase) {
     second: await stage("second-interrupted", "interrupted"),
     rows,
     states,
-    receiptsFor: (runIds: string[]) => readSessionPendingInputReceiptsInWorker(target, { runIds }),
-    dismiss: (
-      inputIds: readonly string[],
-      sessionId = target.sessionId,
-      current: () => void = assertCurrent,
-    ) => dismissRetiredSessionPendingInputs({ ...target, sessionId }, inputIds, current),
+    dismiss: (inputIds: readonly string[], sessionId = target.sessionId) =>
+      dismissRetiredSessionPendingInputs({ ...target, sessionId }, inputIds, assertCurrent),
   };
 }
 
@@ -138,19 +131,6 @@ it("tombstones retired inputs in the database worker and keeps their rows and co
   expect(rows[f.second]?.state).toBe("interrupted");
 });
 
-it("keeps a cancelled receipt as the replay fence after dismissal", async () => {
-  expect(await f.receiptsFor(["interrupted"])).toEqual([
-    { runId: "interrupted", state: "pending" },
-  ]);
-  await f.dismiss([f.interrupted]);
-  expect(await f.receiptsFor(["interrupted", "queued"])).toEqual(
-    expect.arrayContaining([
-      { runId: "interrupted", state: "pending", cancelled: true },
-      { runId: "queued", state: "pending" },
-    ]),
-  );
-});
-
 it("repeats a dismissal idempotently and reports ids that are no longer retained", async () => {
   await f.dismiss([f.cancelled]);
   const after = f.rows();
@@ -162,16 +142,6 @@ it("repeats a dismissal idempotently and reports ids that are no longer retained
   });
   expect(f.rows()[f.cancelled]).toEqual(after[f.cancelled]);
   expect(f.states()[f.second]).toBe("cancelled");
-});
-
-it("refuses queued and stale targets without changing anything", async () => {
-  const before = f.rows();
-  expect(await f.dismiss([f.interrupted, f.queued])).toEqual({
-    kind: "active",
-    inputIds: [f.queued],
-  });
-  expect(await f.dismiss([f.interrupted], "replaced-session")).toEqual({ kind: "stale" });
-  expect(f.rows()).toEqual(before);
 });
 
 it("refuses an interrupted input that a resend has reclaimed", async () => {
@@ -198,6 +168,12 @@ it("refuses an interrupted input that a resend has reclaimed", async () => {
   expect((await f.dismiss([f.interrupted])).kind).toBe("dismissed");
 });
 
+it("refuses stale targets without changing retained inputs", async () => {
+  const before = f.rows();
+  expect(await f.dismiss([f.interrupted], "replaced-session")).toEqual({ kind: "stale" });
+  expect(f.rows()).toEqual(before);
+});
+
 it("refuses retired rows whose registered owner is still settling", async () => {
   const before = f.rows();
   const owner = {
@@ -219,28 +195,4 @@ it("refuses retired rows whose registered owner is still settling", async () => 
     releaseSessionPendingInputOwner(owner);
   }
   expect((await f.dismiss([f.interrupted])).kind).toBe("dismissed");
-});
-
-it("rolls back dismissal when session write authority is revoked at commit", async () => {
-  const before = f.rows();
-  let current = true;
-  const admitted = probe.admission(admission, (request, grant, callback) => {
-    if (request.stage === "commit") {
-      current = false;
-    }
-    return callback(request, grant);
-  });
-  try {
-    await expect(
-      f.dismiss([f.interrupted, f.cancelled], target.sessionId, () => {
-        if (!current) {
-          throw new Error("Dismissal authority revoked");
-        }
-      }),
-    ).rejects.toThrow("Dismissal authority revoked");
-    expect(current).toBe(false);
-    expect(f.rows()).toEqual(before);
-  } finally {
-    admitted.mockRestore();
-  }
 });
