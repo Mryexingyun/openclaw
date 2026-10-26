@@ -8,6 +8,7 @@ import { constants, PerformanceObserver } from "node:perf_hooks";
 import { setImmediate as nextTurn } from "node:timers/promises";
 import { parseArgs } from "node:util";
 import { isRecord } from "../../packages/normalization-core/src/record-coerce.ts";
+import type { SubagentRunReadIndex } from "../../src/agents/subagents/registry/subagent-registry-queries.js";
 import type { SubagentRunReadRecord } from "../../src/agents/subagents/registry/subagent-registry-read.types.js";
 import type { SubagentRunRecord } from "../../src/agents/subagents/registry/subagent-registry.types.js";
 import type { SessionEntry } from "../../src/config/sessions/types.js";
@@ -286,6 +287,15 @@ function updateRun() {
   publishSubagentRunChanges([entry.childSessionKey], [entry.runId]);
   sequence++;
 }
+
+// Named declarations remain visible in V8 allocation stacks for anonymous query closures.
+function readActiveDescendants(index: SubagentRunReadIndex<SubagentRunReadRecord>): void {
+  for (let root = 0; root < requesterRoots.length; root++) {
+    checksum += index.countActiveDescendantRuns(requesterRoots[root]!);
+  }
+  descendantQueries += requesterRoots.length;
+}
+
 async function resolveList() {
   if (projection && listSessions) {
     const pageSize = Math.min(100, rows.length);
@@ -312,10 +322,7 @@ async function resolveList() {
     topologyChanges++;
   }
   previousTopology = topology;
-  for (const key of requesterRoots) {
-    checksum += index.countActiveDescendantRuns(key);
-  }
-  descendantQueries += requesterRoots.length;
+  readActiveDescendants(index);
   const before = process.threadCpuUsage();
   for (const row of ownerRows) {
     checksum += resolveSessionChildOwners({ ...row, now: clock, subagentRuns: index }).length;
@@ -375,7 +382,6 @@ try {
   if (values.mode !== "timing") {
     inspector.connect();
   }
-  let countedDescendantQueries: number | undefined;
   if (values.mode === "census") {
     await inspector.post("Profiler.enable");
     await inspector.post("Profiler.startPreciseCoverage", { callCount: true, detailed: false });
@@ -410,19 +416,6 @@ try {
           callsPerList: (fn.ranges[0]?.count ?? 0) / work.lists,
         })),
       );
-    countedDescendantQueries = calls.reduce(
-      (count, fn) =>
-        count +
-        (fn.file === "subagent-registry-queries.ts" &&
-        [
-          "countActiveDescendantRuns",
-          "countPendingDescendantRuns",
-          "hasDescendantRunAwaitingSettle",
-        ].includes(fn.name)
-          ? fn.calls
-          : 0),
-      0,
-    );
     writeFileSync(path.join(root, "calls.json"), JSON.stringify(calls, null, 2));
   }
   let allocatedBytes: number | undefined;
@@ -447,16 +440,7 @@ try {
         name === "resolveSessionChildController";
       controller ||=
         name === "resolveSessionChildController" || name === "getSubagentChildControllerSessionKey";
-      descendant ||=
-        /\/subagent-registry-(queries|read-topology)\.ts$/.test(node.callFrame.url) &&
-        [
-          "countActiveDescendantRuns",
-          "countPendingDescendantRuns",
-          "hasDescendantRunAwaitingSettle",
-          "cachedDescendantCount",
-          "countDescendantRuns",
-          "getDescendantKeys",
-        ].includes(name);
+      descendant ||= name === "readActiveDescendants";
       allocation.total += node.selfSize;
       if (owner) {
         allocation.childOwner += node.selfSize;
@@ -472,8 +456,10 @@ try {
     allocatedBytes = allocation.total;
     childOwnerAllocatedBytes = allocation.childOwner;
     controllerAllocatedBytes = allocation.controller;
-    descendantAllocatedBytes = allocation.descendant;
-    controllerAndDescendantAllocatedBytes = allocation.union;
+    if (values.workload === "owner") {
+      descendantAllocatedBytes = allocation.descendant;
+      controllerAndDescendantAllocatedBytes = allocation.union;
+    }
   }
   const gc: Record<string, { count: number; totalMs: number }> = {};
   for (const entry of gcEntries) {
@@ -510,20 +496,12 @@ try {
     ownerReads,
     returnedRows,
     requesterRoots: requesterRoots.length,
-    descendantQueries:
-      countedDescendantQueries ?? (values.workload === "owner" ? descendantQueries : undefined),
+    descendantQueryCountAvailable: values.workload === "owner",
+    descendantQueries: values.workload === "owner" ? descendantQueries : undefined,
     descendantQueriesPerList:
-      countedDescendantQueries !== undefined
-        ? countedDescendantQueries / work.lists
-        : values.workload === "owner"
-          ? descendantQueries / work.lists
-          : undefined,
+      values.workload === "owner" ? descendantQueries / work.lists : undefined,
     descendantQueryCountSource:
-      countedDescendantQueries !== undefined
-        ? "precise coverage"
-        : values.workload === "owner"
-          ? "explicit owner-workload calls"
-          : undefined,
+      values.workload === "owner" ? "explicit owner-workload calls" : undefined,
     allocatedBytes,
     allocatedBytesPerList: allocatedBytes === undefined ? undefined : allocatedBytes / work.lists,
     childOwnerAllocatedBytes,
@@ -532,6 +510,11 @@ try {
     controllerAllocatedBytes,
     controllerAllocatedBytesPerList:
       controllerAllocatedBytes === undefined ? undefined : controllerAllocatedBytes / work.lists,
+    descendantAllocationAvailable: values.mode === "allocation" && values.workload === "owner",
+    descendantAllocationAttribution:
+      values.workload === "owner"
+        ? "inclusive readActiveDescendants workload subtree"
+        : "unavailable: production descendant frames are anonymous",
     descendantAllocatedBytes,
     descendantAllocatedBytesPerList:
       descendantAllocatedBytes === undefined ? undefined : descendantAllocatedBytes / work.lists,
