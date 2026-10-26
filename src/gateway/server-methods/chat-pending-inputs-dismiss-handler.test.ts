@@ -107,6 +107,24 @@ async function withDismissTest(run: (f: Awaited<ReturnType<typeof fixture>>) => 
 
 it("tombstones retired inputs, returns their run ids, and keeps every row", () =>
   withDismissTest(async (f) => {
+    const [visible, originalHistory] = await chatRpc(f.context, f.client, "chat.history", {
+      sessionKey: scope.sessionKey,
+    });
+    expect(visible).toBe(true);
+    const items = (
+      originalHistory as {
+        pendingInputs: { items: { id: string; state: string; message: Record<string, unknown> }[] };
+      }
+    ).pendingInputs.items;
+    for (const [id, state] of [
+      [f.interrupted, "interrupted"],
+      [f.cancelled, "cancelled"],
+    ] as const) {
+      const item = items.find((candidate) => candidate.id === id);
+      expect(item?.state).toBe(state);
+      expect(item?.message.display).toBeUndefined();
+      expect(JSON.stringify(item?.message.content)).toContain("Synthetic retained prompt");
+    }
     const changed = vi.spyOn(sessionChangeEvent, "emitSessionsChanged");
     expect(await f.dismiss([f.interrupted, f.cancelled, "gone-input"])).toEqual([
       true,
@@ -178,28 +196,6 @@ it("requires session write authority at the registered RPC", () =>
     expect(await f.retained()).toEqual(before);
     f.client.connect.scopes = ["operator.sessions.read", "operator.sessions.write"];
     expect((await f.dismiss([f.cancelled]))[0]).toBe(true);
-  }));
-
-it("loads retained rows written before dismissal existed and renders them with their content", () =>
-  withDismissTest(async (f) => {
-    const [ok, history] = await chatRpc(f.context, f.client, "chat.history", {
-      sessionKey: scope.sessionKey,
-    });
-    expect(ok).toBe(true);
-    const items = (
-      history as {
-        pendingInputs: { items: { id: string; state: string; message: Record<string, unknown> }[] };
-      }
-    ).pendingInputs.items;
-    for (const [id, state] of [
-      [f.interrupted, "interrupted"],
-      [f.cancelled, "cancelled"],
-    ] as const) {
-      const item = items.find((candidate) => candidate.id === id);
-      expect(item?.state).toBe(state);
-      expect(item?.message.display).toBeUndefined();
-      expect(JSON.stringify(item?.message.content)).toContain("Synthetic retained prompt");
-    }
   }));
 
 it("refuses at the worker commit when session write access is revoked after admission", () =>
