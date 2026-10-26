@@ -19,13 +19,7 @@ import {
   submenu,
   tabFocus as tabTo,
 } from "./menu-contract.test-support.tsx";
-import {
-  createMenuControls,
-  Menu,
-  type MenuEntry,
-  type MenuItem,
-  type MenuProps,
-} from "./menu.tsx";
+import { Menu, type MenuEntry, type MenuItem, type MenuProps } from "./menu.tsx";
 import { Popover, type PopoverHandle } from "./popover.tsx";
 
 afterEach(cleanup);
@@ -179,27 +173,39 @@ describe("Solid menu navigation", () => {
     expect(selected).toEqual(["beta", "footer"]);
   });
 
-  it("preserves modified, middle, and context-menu link gestures without selecting", async () => {
+  it("preserves native link gestures, disables unavailable links, and honors selection vetoes", async () => {
     const selected: string[] = [];
     let parentContextMenus = 0;
     render(() => (
       <aside
         onContextMenu={(event) => {
-          parentContextMenus += 1;
+          parentContextMenus++;
           event.preventDefault();
         }}
       >
         <Menu
           id="people"
           label="People"
-          items={[{ id: "new", label: "New session", href: "/new?agent=main" }]}
-          onSelect={(entry) => selected.push(entry.id)}
+          items={[
+            { id: "disabled", label: "Unavailable", href: "/new?agent=other", disabled: true },
+            { id: "new", label: "New session", href: "/new?agent=main" },
+          ]}
+          onSelect={(entry, event) => {
+            selected.push(entry.id);
+            event.preventDefault();
+          }}
         />
       </aside>
     ));
     flush();
     await openMenu();
-    const link = surface().querySelector<HTMLAnchorElement>("a")!;
+    const link = surface().querySelector<HTMLAnchorElement>('a[data-value="new"]')!;
+    const disabled = surface().querySelector<HTMLAnchorElement>('a[data-value="disabled"]')!;
+    const mouse = (target: Element, type: string, init: MouseEventInit = {}) => {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, ...init });
+      target.dispatchEvent(event);
+      return event;
+    };
     const prevented: boolean[] = [];
     const stopNavigation = (event: MouseEvent) => {
       prevented.push(event.defaultPrevented);
@@ -209,56 +215,22 @@ describe("Solid menu navigation", () => {
     window.addEventListener("click", stopNavigation);
     window.addEventListener("auxclick", stopNavigation);
     try {
-      for (const modifiers of [
-        { metaKey: true },
-        { ctrlKey: true },
-        { shiftKey: true },
-        { altKey: true },
-        { button: 1 },
-      ]) {
-        link.dispatchEvent(
-          new MouseEvent("click", { bubbles: true, cancelable: true, ...modifiers }),
-        );
+      for (const modifier of ["metaKey", "ctrlKey", "shiftKey", "altKey"] as const) {
+        mouse(link, "click", { [modifier]: true });
       }
-      link.dispatchEvent(
-        new MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 1 }),
-      );
+      mouse(link, "click", { button: 1 });
+      mouse(link, "auxclick", { button: 1 });
       expect(prevented).toEqual(Array(6).fill(false));
     } finally {
       window.removeEventListener("click", stopNavigation);
       window.removeEventListener("auxclick", stopNavigation);
     }
-    const contextMenu = new MouseEvent("contextmenu", {
-      bubbles: true,
-      cancelable: true,
-      button: 2,
-    });
-    link.dispatchEvent(contextMenu);
-    expect(contextMenu.defaultPrevented).toBe(false);
+    expect(mouse(link, "contextmenu", { button: 2 }).defaultPrevented).toBe(false);
     expect(parentContextMenus).toBe(0);
     expect(selected).toEqual([]);
     expect(surface().matches(":popover-open")).toBe(true);
-    const triggerContextMenu = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
-    trigger().dispatchEvent(triggerContextMenu);
-    expect(triggerContextMenu.defaultPrevented).toBe(true);
+    expect(mouse(trigger(), "contextmenu").defaultPrevented).toBe(true);
     expect(parentContextMenus).toBe(1);
-  });
-
-  it("keeps disabled links inert and honors link selection vetoes", async () => {
-    const selected: string[] = [];
-    mountMenu({
-      items: [
-        { id: "disabled", label: "Unavailable", href: "/new?agent=other", disabled: true },
-        { id: "new", label: "New session", href: "/new?agent=main" },
-      ],
-      onSelect: (entry, event) => {
-        selected.push(entry.id);
-        event.preventDefault();
-      },
-    });
-    await openMenu();
-    const disabled = surface().querySelector<HTMLAnchorElement>('a[data-value="disabled"]')!;
-    const link = surface().querySelector<HTMLAnchorElement>('a[data-value="new"]')!;
     expect(disabled.hasAttribute("href")).toBe(false);
     expect(disabled.getAttribute("aria-disabled")).toBe("true");
     expect(disabled.tabIndex).toBe(-1);
@@ -274,27 +246,21 @@ describe("Solid menu navigation", () => {
   });
 
   it("owns Tab dismissal with caller-selected focus destinations", async () => {
-    let credential!: HTMLInputElement;
-    let veto = true;
-    render(() => (
-      <>
-        <button>Before picker</button>
-        <Menu
-          id="provider"
-          label="Provider"
-          items={[{ id: "beta", label: "Beta" }]}
-          tabFocusTarget={(backward) => (backward ? trigger("provider") : credential)}
-          onBeforeHide={(event) => {
-            if (veto) {
-              event.preventDefault();
-            }
-          }}
-        />
-        <input ref={(node) => (credential = node)} aria-label="Credential" />
-      </>
-    ));
-    flush();
+    const credential = document.createElement("input");
     credential.value = "synthetic-key";
+    let veto = true;
+    const view = mountMenu({
+      id: "provider",
+      label: "Provider",
+      items: [{ id: "beta", label: "Beta" }],
+      tabFocusTarget: (backward) => (backward ? trigger("provider") : credential),
+      onBeforeHide: (event) => {
+        if (veto) {
+          event.preventDefault();
+        }
+      },
+    });
+    view.container.append(credential);
     await openMenu("provider");
     await userEvent.tab();
     expect(surface("provider").matches(":popover-open")).toBe(true);
@@ -542,32 +508,28 @@ describe("Solid menu navigation", () => {
 
   it("keeps Tab in the current menu when a descendant menu has visible controls", async () => {
     let veto = true;
-    const view = render(() => {
-      const controls = createMenuControls();
-      return (
+    const view = mountControls((controls) => ({
+      items: [],
+      children: (
         <>
-          <Menu id="people" label="People" items={[]} controls={controls}>
-            <input ref={controls.ref()} aria-label="First control" data-form-control="" />
-            <Menu
-              id="nested-controls"
-              label="Nested controls"
-              items={[]}
-              controls={controls}
-              onBeforeHide={(event) => {
-                if (veto) {
-                  event.preventDefault();
-                }
-              }}
-            >
-              <input ref={controls.ref()} aria-label="Descendant control" data-form-control="" />
-            </Menu>
-            <input ref={controls.ref()} aria-label="Last control" data-form-control="" />
+          <input ref={controls.ref()} aria-label="First control" data-form-control="" />
+          <Menu
+            id="nested-controls"
+            label="Nested controls"
+            items={[]}
+            controls={controls}
+            onBeforeHide={(event) => {
+              if (veto) {
+                event.preventDefault();
+              }
+            }}
+          >
+            <input ref={controls.ref()} aria-label="Descendant control" data-form-control="" />
           </Menu>
-          <button tabindex={0}>After menu</button>
+          <input ref={controls.ref()} aria-label="Last control" data-form-control="" />
         </>
-      );
-    });
-    flush();
+      ),
+    }));
     await openMenu();
     await openMenu("nested-controls");
     const first = view.getByRole("textbox", { name: "First control" });

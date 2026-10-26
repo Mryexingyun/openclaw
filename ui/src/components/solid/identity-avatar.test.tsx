@@ -30,16 +30,15 @@ function TestImage(props: { source: string | Promise<string | null> | null }) {
 
 it("retains face nodes across same-ID publication", async () => {
   const [agent, publish] = createSignal<AgentIdentity>({ id: "forge", name: "Before" });
-  const view = mountSolid(() => <Avatar agent={agent()} />);
+  const { container } = mountSolid(() => <Avatar agent={agent()} />);
   await vi.dynamicImportSettled();
   flush();
-  const face = view.container.querySelector("svg.identity-avatar__agent-face")!;
-  const features = face.querySelector("g")!;
-  const mutations = observe(features, { childList: true, subtree: true });
+  const face = container.querySelector("svg.identity-avatar__agent-face")!;
+  const mutations = observe(face.querySelector("g")!, { childList: true, subtree: true });
   publish({ id: "forge", name: "After" });
   flush();
-  expect(view.container.querySelector('[aria-label="After"]')).not.toBeNull();
-  expect(view.container.querySelector("svg.identity-avatar__agent-face")).toBe(face);
+  expect(container.querySelector('[aria-label="After"]')).not.toBeNull();
+  expect(container.querySelector("svg.identity-avatar__agent-face")).toBe(face);
   expect(mutations()).toHaveLength(0);
 });
 
@@ -93,43 +92,41 @@ it("ignores retired resource and image-node outcomes", async () => {
 
 it("preserves prepared avatar state and image errors", () => {
   const failed = vi.fn();
-  const [agent, setAgent] = createSignal<AgentIdentity>({
-    id: "sidebar-person",
-    name: "Synthetic assistant",
-    textAvatar: "🦀",
-    pending: true,
-  });
-  const view = mountSolid(() => <Avatar agent={agent()} class="avatar" onImageError={failed} />);
-  const face = view.container.querySelector<HTMLElement>(".avatar");
-  expect(face?.getAttribute("aria-label")).toBe("Synthetic assistant");
-  expect(face?.dataset.avatarState).toBe("pending");
-  expect(view.container.querySelector<HTMLElement>("[data-avatar]")?.dataset.avatar).toBe("🦀");
+  const initial = { id: "sidebar", name: "Assistant", textAvatar: "🦀", pending: true };
+  const [agent, setAgent] = createSignal<AgentIdentity>(initial);
+  const { container } = mountSolid(() => (
+    <Avatar agent={agent()} class="avatar" onImageError={failed} />
+  ));
+  const face = container.querySelector<HTMLElement>(".avatar")!;
+  expect(face.getAttribute("aria-label")).toBe("Assistant");
+  expect(face.dataset.avatarState).toBe("pending");
+  expect(container.querySelector<HTMLElement>("[data-avatar]")?.dataset.avatar).toBe("🦀");
 
-  const mutations = observe(face!, { attributes: true, attributeFilter: ["data-avatar-state"] });
+  const mutations = observe(face, { attributes: true, attributeFilter: ["data-avatar-state"] });
   setAgent((current) => ({ ...current }));
   flush();
   expect(mutations()).toHaveLength(0);
 
-  setAgent((current) => ({ ...current, avatar: "/avatar/sidebar-synthetic", pending: false }));
+  setAgent({ ...initial, avatar: "/avatar/sidebar", pending: false });
   flush();
-  const image = view.container.querySelector("img")!;
-  expect(image?.getAttribute("src")).toBe("/avatar/sidebar-synthetic");
-  expect(view.container.querySelector(".avatar")).toBe(face);
+  const image = container.querySelector("img")!;
+  expect(image.getAttribute("src")).toBe("/avatar/sidebar");
+  expect(container.querySelector(".avatar")).toBe(face);
   image.dispatchEvent(new Event("error"));
   flush();
   expect(failed).toHaveBeenCalledOnce();
-  expect(face?.dataset.avatarState).toBe("failed");
-  expect(face?.classList.contains("is-fallback")).toBe(true);
+  expect(face.dataset.avatarState).toBe("failed");
+  expect(face.classList.contains("is-fallback")).toBe(true);
   setAgent((current) => ({ ...current, avatar: undefined }));
   flush();
-  expect(view.container.querySelector("img")).toBeNull();
-  expect(view.container.querySelector("[data-avatar]")?.getAttribute("data-avatar")).toBe("🦀");
+  expect(container.querySelector("img")).toBeNull();
+  expect(container.querySelector("[data-avatar]")?.getAttribute("data-avatar")).toBe("🦀");
 });
 
 it.each(["emoji", "dispose"] as const)("retires pending face artwork on %s", async (mode) => {
   const [agent, setAgent] = createSignal<AgentIdentity>({ id: "retired-lazy-face" });
   const [visible, setVisible] = createSignal(true);
-  const view = mountSolid(() => (
+  const { container } = mountSolid(() => (
     <Show when={visible()}>
       <Avatar agent={agent()} />
     </Show>
@@ -143,12 +140,12 @@ it.each(["emoji", "dispose"] as const)("retires pending face artwork on %s", asy
   flush();
   await vi.dynamicImportSettled();
   flush();
-  expect(view.container.querySelector(".identity-avatar__agent-face")).toBeNull();
+  expect(container.querySelector(".identity-avatar__agent-face")).toBeNull();
   if (mode === "emoji") {
-    expect(
-      view.container.querySelector<HTMLElement>(".identity-avatar__text")?.dataset.avatar,
-    ).toBe("🦀");
+    expect(container.querySelector<HTMLElement>(".identity-avatar__text")?.dataset.avatar).toBe(
+      "🦀",
+    );
   } else {
-    expect(view.container.querySelector(".identity-avatar--agent")).toBeNull();
+    expect(container.querySelector(".identity-avatar--agent")).toBeNull();
   }
 });

@@ -2,26 +2,22 @@ import { createSignal, flush } from "solid-js";
 import { afterEach, expect, it } from "vitest";
 import { i18n } from "../../i18n/index.ts";
 /* @vitest-environment jsdom */
-import { cleanupSolid, mountSolid } from "../../test-helpers/mount-solid.ts";
+import { mountSolid } from "../../test-helpers/mount-solid.ts";
 import { SessionOwnerChip } from "./session-owner-chip.tsx";
 import { ViewerAvatar, ViewerFacepile, type ViewerAvatarProps } from "./viewer-facepile.tsx";
 
 const originalLocale = i18n.getLocale();
-afterEach(async () => {
-  cleanupSolid();
-  document.body.replaceChildren();
-  await i18n.setLocale(originalLocale);
-});
+afterEach(() => i18n.setLocale(originalLocale));
 
 it("refreshes shared-owner labels without changing identity initials on locale publication", async () => {
   const user = { id: "gateway-owner", name: "Saved owner name", watchedSessions: [] };
-  const view = mountSolid(() => (
+  const { container } = mountSolid(() => (
     <>
       <ViewerAvatar user={user} />
       <ViewerFacepile staticUsers={[user]} />
     </>
   ));
-  const avatar = () => view.container.querySelector(".viewer-avatar")!;
+  const avatar = () => container.querySelector(".viewer-avatar")!;
   expect(avatar().getAttribute("aria-label")).toBe("Saved owner name · Shared owner");
   i18n.registerTranslation("pt-BR", {
     presence: {
@@ -31,23 +27,19 @@ it("refreshes shared-owner labels without changing identity initials on locale p
   await i18n.setLocale("pt-BR");
   flush();
   expect(avatar().getAttribute("aria-label")).toBe("Saved owner name · Dono compartilhado");
-  expect(view.container.querySelector(".viewer-avatar__initials")?.textContent).toBe("SO");
-  expect(view.container.querySelector(".viewer-facepile")?.getAttribute("aria-label")).toBe(
+  expect(container.querySelector(".viewer-avatar__initials")?.textContent).toBe("SO");
+  expect(container.querySelector(".viewer-facepile")?.getAttribute("aria-label")).toBe(
     "Saved owner name · Dono compartilhado",
   );
 });
 
 it("retains a loaded Solid avatar through label updates", () => {
-  const [user, setUser] = createSignal<ViewerAvatarProps["user"]>({
-    id: "profile-ada",
-    name: "Ada",
-    avatarUrl: "/api/users/profile-ada/avatar?v=1",
-    watchedSessions: [],
-  });
+  const avatarUrl = "/api/users/ada/avatar?v=1";
+  const initial = { id: "ada", name: "Ada", avatarUrl, watchedSessions: [] };
+  const [user, setUser] = createSignal<ViewerAvatarProps["user"]>(initial);
   const { container } = mountSolid(() => <ViewerAvatar user={user()} />);
   const avatar = () => container.querySelector<HTMLElement>(".viewer-avatar")!;
   const image = container.querySelector("img")!;
-  expect(image).not.toBeNull();
   expect(avatar().classList.contains("is-pending")).toBe(true);
   image.dispatchEvent(new Event("load"));
   flush();
@@ -57,7 +49,7 @@ it("retains a loaded Solid avatar through label updates", () => {
   expect(container.querySelector("img")).toBe(image);
   expect(avatar().getAttribute("aria-label")).toBe("Ada Lovelace");
   expect(avatar().dataset.avatarState).toBe("loaded");
-  setUser((previous) => ({ ...previous!, avatarUrl: "/api/users/profile-ada/avatar?v=2" }));
+  setUser((previous) => ({ ...previous!, avatarUrl: "/api/users/ada/avatar?v=2" }));
   flush();
   expect(container.querySelector("img")).toBe(image);
   expect(avatar().dataset.avatarState).toBe("pending");
