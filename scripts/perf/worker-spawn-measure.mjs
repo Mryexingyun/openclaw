@@ -111,10 +111,10 @@ if (!isMainThread) {
   await import(pathToFileURL(path.join(root, workerData.entry)).href);
   const cold = { ...delta(before), loadedModules: loaded.size };
   let taskStart;
-  parentPort.on("message", async (message) => {
+  async function handleProbe(message) {
     if (message.probe === "begin") {
       taskStart = snapshot();
-      parentPort.postMessage({ probe: "begin" });
+      parentPort.postMessage({ probe: "begin" }, []);
     } else if (message.probe === "end") {
       const firstTask = { ...delta(taskStart), loadedModules: loaded.size };
       // Census runs only after both measured intervals, so debugger allocations do not enter them.
@@ -129,16 +129,26 @@ if (!isMainThread) {
       await inspector.post("Debugger.enable");
       await inspector.post("Debugger.disable");
       inspector.disconnect();
-      compiler?.stop();
-      parentPort.postMessage({
-        probe: "end",
-        firstTask,
-        evaluatedModules: evaluated.size,
-        overlays: [...overlays],
-      });
+      await compiler?.stop();
+      parentPort.postMessage(
+        {
+          probe: "end",
+          firstTask,
+          evaluatedModules: evaluated.size,
+          overlays: [...overlays],
+        },
+        [],
+      );
     }
+  }
+  parentPort.on("message", (message) => {
+    void handleProbe(message).catch(
+      /** @param {unknown} error */ (error) => {
+        parentPort.postMessage({ probe: message.probe, error: String(error) }, []);
+      },
+    );
   });
-  parentPort.postMessage({ probe: "cold", cold });
+  parentPort.postMessage({ probe: "cold", cold }, []);
 } else {
   const { values } = parseArgs({
     options: {
@@ -153,16 +163,14 @@ if (!isMainThread) {
   assert(Number.isSafeInteger(samples) && samples > 0, "--samples must be positive");
   assert(!values.worker || Object.hasOwn(entries, values.worker), "Unknown --worker");
   const baselineDir = values["baseline-dir"] && path.resolve(values["baseline-dir"]);
+  // Keep this parent-only directory walker outside the measured worker import graph.
+  const { listDirectoryTreeStrictSync } = await import("../../src/infra/directory-walk.js");
   // Resolve overlays before preparation; measured workers only read compiled cache files.
   const baselineFiles = baselineDir
     ? Object.fromEntries(
-        fs
-          .readdirSync(baselineDir, { recursive: true, withFileTypes: true })
-          .filter((entry) => entry.isFile())
-          .map((entry) => {
-            const filename = path.join(entry.parentPath, entry.name);
-            return [path.relative(baselineDir, filename), filename];
-          }),
+        listDirectoryTreeStrictSync(baselineDir)
+          .filter(({ dirent }) => dirent.isFile())
+          .map(({ relativePath }) => [relativePath, path.join(baselineDir, relativePath)]),
       )
     : {};
   const output = path.resolve(values.output);
@@ -226,7 +234,7 @@ if (!isMainThread) {
       );
     };
   }
-  function input(name) {
+  function requestForWorker(name) {
     if (name === "openclaw-state-read") {
       return {
         command: { type: "admit" },
@@ -317,6 +325,8 @@ if (!isMainThread) {
     worker.on("message", (message) => {
       if (message.probe === "cold") {
         cold.resolve(message.cold);
+      } else if (message.error) {
+        fail(new Error(message.error));
       } else {
         probes.get(message.probe)?.resolve(message);
       }
@@ -344,7 +354,7 @@ if (!isMainThread) {
     const probe = (operation) => {
       const pending = Promise.withResolvers();
       probes.set(operation, pending);
-      worker.postMessage({ probe: operation });
+      worker.postMessage({ probe: operation }, []);
       return pending.promise;
     };
     const timeout = setTimeout(
@@ -362,7 +372,7 @@ if (!isMainThread) {
       const firstStarted = performance.now();
       channel.port1.postMessage({
         taskId: 1,
-        input: input(name),
+        input: requestForWorker(name),
         interactive: true,
         nativeSections: new SharedArrayBuffer(4),
         taskContext: { deletedAgentDatabaseFences: [] },
