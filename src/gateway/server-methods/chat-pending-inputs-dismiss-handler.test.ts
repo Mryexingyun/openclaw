@@ -22,6 +22,7 @@ const scope = {
   sessionKey: "agent:main:pending-dismiss",
   sessionId: "pending-dismiss-session",
 };
+const forbidden = [false, undefined, { code: "FORBIDDEN" }];
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -170,18 +171,10 @@ it("requires session write authority at the registered RPC", () =>
       );
     }
     const readOnly = { ...f.client, connect: { ...f.client.connect, scopes: ["operator.read"] } };
-    expect(await f.dismiss([f.cancelled], {}, readOnly)).toMatchObject([
-      false,
-      undefined,
-      { code: "FORBIDDEN" },
-    ]);
+    expect(await f.dismiss([f.cancelled], {}, readOnly)).toMatchObject(forbidden);
     const otherWriter = roleClient("write", "dismiss-other-writer");
     otherWriter.connect.scopes = ["operator.sessions.read", "operator.sessions.write"];
-    expect(await f.dismiss([f.cancelled], {}, otherWriter)).toMatchObject([
-      false,
-      undefined,
-      { code: "FORBIDDEN" },
-    ]);
+    expect(await f.dismiss([f.cancelled], {}, otherWriter)).toMatchObject(forbidden);
     expect(await f.retained()).toEqual(before);
     f.client.connect.scopes = ["operator.sessions.read", "operator.sessions.write"];
     expect((await f.dismiss([f.cancelled]))[0]).toBe(true);
@@ -220,11 +213,7 @@ it("refuses at the worker commit when session write access is revoked after admi
       return callback(request, grant);
     });
     try {
-      expect(await f.dismiss([f.interrupted, f.cancelled])).toMatchObject([
-        false,
-        undefined,
-        { code: "FORBIDDEN" },
-      ]);
+      expect(await f.dismiss([f.interrupted, f.cancelled])).toMatchObject(forbidden);
     } finally {
       admitted.mockRestore();
     }
