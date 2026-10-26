@@ -41,6 +41,8 @@ function setup(request: ReturnType<typeof createGatewayRequestMock>) {
   publish({ ...gateway.snapshot, phase: "connected", client });
   return { gateway, publish, store: sessionContextReportsForGateway(gateway) };
 }
+const unavailable = (retryAfterMs?: number) =>
+  new GatewayProtocolRequestError({ code: "UNAVAILABLE", retryable: true, retryAfterMs });
 
 it("shares pending reads, cached tab return and explicit refresh while releasing final demand", async () => {
   const initial = createDeferredCore<ReturnType<typeof response>>();
@@ -97,9 +99,7 @@ it("shares pending reads, cached tab return and explicit refresh while releasing
   latest.resolve(response({ ...report, generatedAt: 3 }));
   await finalRead;
   expect(store.get(finalTarget).report?.generatedAt).toBe(3);
-  request.mockRejectedValueOnce(
-    new GatewayProtocolRequestError({ code: "UNAVAILABLE", retryable: true }),
-  );
+  request.mockRejectedValueOnce(unavailable());
   await store.refresh(finalTarget);
   expect(store.get(finalTarget)).toMatchObject({
     report: { generatedAt: 3 },
@@ -140,8 +140,7 @@ it("fences a pending response across same-client reconnect and reloads only acti
   expect(request).toHaveBeenCalledTimes(2);
   old.resolve(response());
   await oldRead;
-  expect(store.get(target).report).toBeNull();
-  expect(store.get(target).loading).toBe(true);
+  expect(store.get(target)).toMatchObject({ report: null, loading: true });
   fresh.resolve(response({ ...report, generatedAt: 2 }));
   await freshRead;
   expect(store.get(target).report?.generatedAt).toBe(2);
@@ -178,9 +177,7 @@ it.each(["sessionId", "model", "provider"] as const)(
 it("recovers once for two consumers and preserves server backoff while demand is paused", async () => {
   vi.useFakeTimers();
   const request = createGatewayRequestMock()
-    .mockRejectedValueOnce(
-      new GatewayProtocolRequestError({ code: "UNAVAILABLE", retryable: true }),
-    )
+    .mockRejectedValueOnce(unavailable())
     .mockRejectedValueOnce(
       new GatewayProtocolRequestTimeoutError({
         method: "sessions.usage",
@@ -190,6 +187,10 @@ it("recovers once for two consumers and preserves server backoff while demand is
     )
     .mockResolvedValue(response());
   const { store } = setup(request);
+  const advance = async (ms: number, calls: number) => {
+    await vi.advanceTimersByTimeAsync(ms);
+    expect(request).toHaveBeenCalledTimes(calls);
+  };
   const panel = {};
   const popover = {};
   onTestFinished(() => {
@@ -202,15 +203,11 @@ it("recovers once for two consumers and preserves server backoff while demand is
   store.watch(popover, target);
   await store.refresh(target);
   expect(request).toHaveBeenCalledTimes(1);
-  await vi.advanceTimersByTimeAsync(29_999);
-  expect(request).toHaveBeenCalledTimes(1);
-  await vi.advanceTimersByTimeAsync(1);
-  expect(request).toHaveBeenCalledTimes(2);
-  await vi.advanceTimersByTimeAsync(60_000);
-  expect(request).toHaveBeenCalledTimes(3);
+  await advance(29_999, 1);
+  await advance(1, 2);
+  await advance(60_000, 3);
   expect(store.get(target).report).toEqual(report);
-  await vi.advanceTimersByTimeAsync(600_000);
-  expect(request).toHaveBeenCalledTimes(3);
+  await advance(600_000, 3);
   expect(vi.getTimerCount()).toBe(0);
 
   const held = createDeferredCore<ReturnType<typeof response>>();
@@ -219,13 +216,7 @@ it("recovers once for two consumers and preserves server backoff while demand is
   const latest = { ...target, used: target.used + 100 };
   store.watch(panel, latest);
   store.watch(popover, latest);
-  held.reject(
-    new GatewayProtocolRequestError({
-      code: "UNAVAILABLE",
-      retryable: true,
-      retryAfterMs: 600_000,
-    }),
-  );
+  held.reject(unavailable(600_000));
   await refresh;
   expect(request).toHaveBeenCalledTimes(4);
   expect(store.get(latest).report).toEqual(report);
@@ -237,20 +228,16 @@ it("recovers once for two consumers and preserves server backoff while demand is
   const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
   document.dispatchEvent(new Event("visibilitychange"));
   store.watch(panel, latest);
-  await vi.advanceTimersByTimeAsync(200_000);
-  expect(request).toHaveBeenCalledTimes(4);
+  await advance(200_000, 4);
   visibility.mockReturnValue("visible");
   document.dispatchEvent(new Event("visibilitychange"));
-  await vi.advanceTimersByTimeAsync(99_999);
-  expect(request).toHaveBeenCalledTimes(4);
-  await vi.advanceTimersByTimeAsync(1);
-  expect(request).toHaveBeenCalledTimes(5);
+  await advance(99_999, 4);
+  await advance(1, 5);
   expect(store.get(latest)).toMatchObject({ report, failed: false });
   for (const state of ["hidden", "visible"] as const) {
     visibility.mockReturnValue(state);
     document.dispatchEvent(new Event("visibilitychange"));
   }
-  await vi.advanceTimersByTimeAsync(600_000);
-  expect(request).toHaveBeenCalledTimes(5);
+  await advance(600_000, 5);
   expect(vi.getTimerCount()).toBe(0);
 });

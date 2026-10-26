@@ -28,18 +28,14 @@ it("isolates namespaces while merging renamed tabs and excluding disconnected fa
   const profile = { id, identity: { type: "profile" as const, id }, name: "Profile person" };
   const raw = { id, name: "Unqualified sender" };
   const presence = [
-    { instanceId: "profile-tab", user: profile, watchedSessions: ["profile-session"] },
-    { instanceId: "raw-tab", user: raw, watchedSessions: ["raw-session"] },
-    {
-      instanceId: "profile-tab-2",
-      user: { ...profile, name: "Renamed profile" },
-      watchedSessions: ["profile-extra"],
-    },
-    {
-      instanceId: "raw-tab-2",
-      user: { ...raw, name: "Updated raw" },
-      watchedSessions: ["raw-extra"],
-    },
+    ...(
+      [
+        ["profile-tab", profile, "profile-session"],
+        ["raw-tab", raw, "raw-session"],
+        ["profile-tab-2", { ...profile, name: "Renamed profile" }, "profile-extra"],
+        ["raw-tab-2", { ...raw, name: "Updated raw" }, "raw-extra"],
+      ] as const
+    ).map(([instanceId, user, session]) => ({ instanceId, user, watchedSessions: [session] })),
     { instanceId: "closed", user: raw, reason: "disconnect", watchedSessions: ["closed-session"] },
   ];
   const forward = projectPresencePayload({ presence });
