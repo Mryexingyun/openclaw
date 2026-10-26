@@ -2291,10 +2291,10 @@ async function measureColdRowReads(
             ...(values["from-listening"]
               ? {
                   onConnectSent: (connectingClient) => {
-                    const shape = clientReadShapes[index]!.find(
+                    const subscriptionShape = clientReadShapes[index]!.find(
                       (shape) => shape.method === "sessions.messages.subscribe",
                     )!;
-                    openingSubscription = read(connectingClient, shape, 0);
+                    openingSubscription = read(connectingClient, subscriptionShape, 0);
                   },
                 }
               : {}),
