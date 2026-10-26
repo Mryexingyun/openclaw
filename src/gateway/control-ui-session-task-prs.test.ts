@@ -152,7 +152,7 @@ it("reuses unchanged watcher currency and retires it on owner publications", asy
     const selections = vi.spyOn(projection, "selectEntries");
     try {
       expect(await read()).toBe(target);
-      expect(selections).toHaveBeenCalledTimes(2);
+      expect(selections).toHaveBeenCalledTimes(1);
       selections.mockClear();
       for (let index = 0; index < 20; index++) {
         expect(await read()).toBe(target);
