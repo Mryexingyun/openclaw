@@ -1,7 +1,7 @@
 /* @vitest-environment jsdom */
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../../test/helpers/promise.js";
-import { GatewayRequestError } from "../../api/gateway.ts";
+import { GatewayRequestError } from "../../api/gateway-connect-errors.ts";
 import type { ChatAttachment } from "../../lib/chat/chat-types.ts";
 import { createStorageMock } from "../../test-helpers/storage.ts";
 import {

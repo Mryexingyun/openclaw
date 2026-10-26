@@ -19,13 +19,26 @@ import { readControlUiE2eDownload } from "../test-helpers/control-ui-e2e-downloa
 import { waitForControlUiGatewayReady } from "../test-helpers/control-ui-e2e-readiness.ts";
 import { controlUiSessionUrl } from "../test-helpers/control-ui-e2e.ts";
 import { enterControlUiSession } from "../test-helpers/control-ui-session-entry.ts";
+import { connectChatGateway } from "./chat-real-gateway.test-support.ts";
 import { createControlUiE2eSuite, tooltipTitleText } from "./control-ui-e2e-suite.test-support.ts";
 
 const execFileAsync = promisify(execFile);
 let instance: OpenClawTestInstance | undefined;
+let client: Awaited<ReturnType<typeof connectChatGateway>> | undefined;
 const suite = createControlUiE2eSuite({
   name: "Control UI project media with a real Gateway",
   startServerBeforeBrowser: true,
+  resources: {
+    async run(signal) {
+      if (!instance) {
+        throw new Error("Gateway fixture is not running");
+      }
+      client = await connectChatGateway(instance, signal);
+    },
+    async close() {
+      await client?.stopAndWait();
+    },
+  },
   async startServer() {
     const owner = await createOpenClawTestInstance({
       name: "control-ui-project-media",
@@ -60,19 +73,10 @@ suite.define(() => {
       throw new Error("Gateway fixture is not running");
     }
     const owner = instance;
-    const call = async (method: string, params: Record<string, unknown>) => {
-      const result = await owner.cli([
-        "--no-color",
-        "gateway",
-        "call",
-        method,
-        "--params",
-        JSON.stringify(params),
-        "--json",
-      ]);
-      expect(result.code, result.stderr || result.stdout).toBe(0);
-      return JSON.parse(result.stdout) as Record<string, unknown>;
-    };
+    const gateway = client;
+    if (!gateway) {
+      throw new Error("Gateway fixture client is not connected");
+    }
     const projectRoot = owner.state.path("project");
     await mkdir(projectRoot, { recursive: true });
     await writeFile(path.join(projectRoot, "README.md"), "# Synthetic image preview project\n");
@@ -86,9 +90,12 @@ suite.define(() => {
     await git("config", "user.name", "Proof");
     await git("config", "user.email", "proof@example.invalid");
     await git("commit", "-m", "init");
-    const project = await call("projects.register", { path: projectRoot, name: "Image proof" });
+    const project = await gateway.request("projects.register", {
+      path: projectRoot,
+      name: "Image proof",
+    });
     const sessionKey = "agent:main:project-media-proof";
-    const session = await call("sessions.create", {
+    const session = await gateway.request("sessions.create", {
       key: sessionKey,
       agentId: "main",
       projectId: project.id,

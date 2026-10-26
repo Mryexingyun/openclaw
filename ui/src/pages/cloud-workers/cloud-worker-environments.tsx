@@ -17,7 +17,10 @@ import type {
   EnvironmentSummary,
   EnvironmentsListResult,
 } from "../../../../packages/gateway-protocol/src/index.js";
-import { GatewayRequestError, resolveGatewayErrorDetailCode } from "../../api/gateway.ts";
+import {
+  GatewayRequestError,
+  resolveGatewayErrorDetailCode,
+} from "../../api/gateway-connect-errors.ts";
 import { showConfirmDialog, type ConfirmDialogOptions } from "../../components/confirm-dialog.ts";
 import {
   DocsLink,

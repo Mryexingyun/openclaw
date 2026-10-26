@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SESSION_PULL_REQUESTS_SUBSCRIBE_METHOD } from "../../../src/gateway/control-ui-contract.js";
-import { GatewayRequestError } from "../api/gateway.ts";
+import { GatewayRequestError } from "../api/gateway-connect-errors.ts";
 import { sessionProgressCardsForGateway } from "../lib/session-progress-cards.ts";
 import { flush, waitForSolid } from "../test-helpers/solid-settle.ts";
 import { sessionProgressHoverTargetFromEvent } from "./session-progress-hovercard-target.ts";

@@ -3,7 +3,8 @@ import type {
   EnvironmentSummary,
   EnvironmentsListResult,
 } from "@openclaw/gateway-protocol";
-import { GatewayRequestError, type GatewayBrowserClient } from "../../api/gateway.ts";
+import { GatewayRequestError } from "../../api/gateway-connect-errors.ts";
+import type { GatewayBrowserClient } from "../../api/gateway.ts";
 
 async function requestDesktopEnvironments(
   client: Pick<GatewayBrowserClient, "request">,

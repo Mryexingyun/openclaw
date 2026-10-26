@@ -1010,8 +1010,8 @@ suite.define(() => {
         path.join(proofDir, "screenshot-1-attachment-stalled-preparing.png"),
       );
 
-      // Advance virtual clock past the 15-second read timeout
-      await page.clock.runFor(15_001);
+      // Expire the idle watchdog without replaying unrelated frame callbacks.
+      await page.clock.fastForward(15_001);
 
       // Failed reads leave the composer and report through the shared toast.
       await page

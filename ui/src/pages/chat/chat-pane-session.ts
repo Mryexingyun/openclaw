@@ -29,7 +29,7 @@ import {
   parseCatalogSessionKey,
   type CatalogSessionKey,
 } from "../../lib/sessions/catalog-key.ts";
-import { resolveSessionKey, scopedAgentParamsForSession } from "../../lib/sessions/index.ts";
+import { resolveSessionKey, scopedAgentParamsForSession } from "../../lib/sessions/navigation.ts";
 import { parseAgentSessionKey, scopedSessionArtifactKey } from "../../lib/sessions/session-key.ts";
 import { SessionUnreadPatchGuard } from "../../lib/sessions/unread.ts";
 import { releaseChatAttachmentPayloads } from "./attachment-payload-store.ts";
