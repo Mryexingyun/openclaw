@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { WebSocket } from "playwright";
 import { expect, it } from "vitest";
+import type { SessionsCreateResult } from "../../../packages/gateway-protocol/src/schema/sessions.ts";
 import config from "../../../test/fixtures/config-corpus/provider-partially-unavailable.json" with { type: "json" };
 import {
   createOpenClawTestInstance,
@@ -15,16 +16,26 @@ import { evaluateControlUiContext } from "../test-helpers/control-ui-e2e-context
 import { waitForControlUiGatewayReady } from "../test-helpers/control-ui-e2e-readiness.ts";
 import { enterControlUiSession } from "../test-helpers/control-ui-session-entry.ts";
 import { revealChatModelOption } from "../test-helpers/select-picker-e2e.ts";
+import { connectChatGateway } from "./chat-real-gateway.test-support.ts";
 import { createControlUiE2eSuite } from "./control-ui-e2e-suite.test-support.ts";
 
 const captureUiProof = process.env.OPENCLAW_CAPTURE_UI_PROOF === "1";
 const requireRecord = createRequireRecord("record", "expected-object-value");
 
 let instance: OpenClawTestInstance;
+let client: Awaited<ReturnType<typeof connectChatGateway>>;
 const tempDirs = createTempDirTracker();
 const suite = createControlUiE2eSuite({
   name: "Partial refresh with a real Gateway",
   startServerBeforeBrowser: true,
+  resources: {
+    async run(signal) {
+      client = await connectChatGateway(instance, signal);
+    },
+    async close() {
+      await client?.stopAndWait();
+    },
+  },
   async startServer() {
     const mockProvider = path.join(tempDirs.make("partial-refresh-provider-"), "copilot.mjs");
     await fs.writeFile(
@@ -76,37 +87,27 @@ const suite = createControlUiE2eSuite({
 
 suite.define(() => {
   it("retains existing-chat controls after another provider fails to refresh", async () => {
-    const call = async (method: string, params: Record<string, unknown>) => {
-      const result = await instance.cli([
-        "gateway",
-        "call",
-        method,
-        "--json",
-        "--timeout",
-        "30000",
-        "--params",
-        JSON.stringify(params),
-      ]);
-      expect(result.code, result.stderr).toBe(0);
-      return result.stdout;
-    };
     const key = "agent:main:partial-refresh";
-    const { sessionId }: { sessionId: string } = JSON.parse(
-      await call("sessions.create", {
-        key,
-        agentId: "main",
-        label: "Partial refresh",
-        model: "openai/gpt-5.4",
-      }),
+    const { sessionId } = await client.request<SessionsCreateResult>(
+      "sessions.create",
+      { key, agentId: "main", label: "Partial refresh", model: "openai/gpt-5.4" },
+      { timeoutMs: 30_000 },
     );
-    await call("sessions.patch", { key, thinkingLevel: "high" });
-    let catalog: ModelCatalogResult = JSON.parse(
-      await call("models.list", { agentId: "main", view: "configured", refresh: true }),
+    expect.assert(typeof sessionId === "string");
+    await client.request("sessions.patch", { key, thinkingLevel: "high" }, { timeoutMs: 30_000 });
+    let catalog = await client.request<ModelCatalogResult>(
+      "models.list",
+      { agentId: "main", view: "configured", refresh: true },
+      { timeoutMs: 30_000 },
     );
     await expect
       .poll(async () => {
         if (catalog.pendingProviders?.length) {
-          catalog = JSON.parse(await call("models.list", { agentId: "main", view: "configured" }));
+          catalog = await client.request<ModelCatalogResult>(
+            "models.list",
+            { agentId: "main", view: "configured" },
+            { timeoutMs: 30_000 },
+          );
         }
         return catalog.pendingProviders ?? [];
       })
