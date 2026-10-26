@@ -100,7 +100,20 @@ it.each(["call", "callExactId", "callValue", "callExactValue"] as const)(
     if (method === "call" || method === "callExactId") {
       const envelope = await runtime[method](id, input, options);
       expect(envelope.result).toMatchObject(refusalResult);
+      expect(isToolResultError(envelope.result)).toBe(false);
       expect(readToolEffectReceipt(envelope.result)).toEqual({ state: "not_started" });
+      expect(
+        createToolTerminalObserver("refusal-run")({
+          toolName: "records",
+          result: envelope.result,
+          outcome: "success",
+          executionStarted: true,
+        }),
+      ).toMatchObject({
+        executionStarted: false,
+        sideEffectEvidence: false,
+        effectReceipt: { state: "not_started" },
+      });
     } else {
       await expect(runtime[method](id, input, options)).resolves.toEqual(refusalValue);
     }
@@ -110,52 +123,28 @@ it.each(["call", "callExactId", "callValue", "callExactValue"] as const)(
   },
 );
 
-it("keeps direct refusals non-error and explicitly not started", async () => {
+it.each([false, true])("respects outer effects (started=%s)", async (started) => {
   const f = fixture();
-  const result = await f.gated.execute("direct-refusal", { operation: "list" });
-  expect(result).toMatchObject(refusalResult);
-  expect(isToolResultError(result)).toBe(false);
-  expect(readToolEffectReceipt(result)).toEqual({ state: "not_started" });
-  expect(
-    createToolTerminalObserver("direct-run")({
-      toolName: "records",
-      result,
-      outcome: "success",
-      executionStarted: true,
-    }),
-  ).toMatchObject({
-    executionStarted: false,
-    sideEffectEvidence: false,
-    effectReceipt: { state: "not_started" },
-  });
+  const target = {
+    ...f.gated,
+    execute: async () =>
+      withToolEffectBoundary(async (onEffectsStart) => {
+        if (started) {
+          onEffectsStart();
+        }
+        return f.gated.execute("nested", { operation: "list" });
+      }),
+  };
+  const result = runtimeFor(target).callValue("records", { operation: "list" });
+  if (started) {
+    expect(getToolContractFailureCode(await result.catch((error: unknown) => error))).toBe(
+      "output_contract",
+    );
+  } else {
+    await expect(result).resolves.toEqual(refusalValue);
+  }
   f.expectNoSourceWork();
 });
-
-it.each([false, true])(
-  "respects an enclosing operation's effect boundary (started=%s)",
-  async (started) => {
-    const f = fixture();
-    const target = {
-      ...f.gated,
-      execute: async () =>
-        withToolEffectBoundary(async (onEffectsStart) => {
-          if (started) {
-            onEffectsStart();
-          }
-          return f.gated.execute("nested", { operation: "list" });
-        }),
-    };
-    const result = runtimeFor(target).callValue("records", { operation: "list" });
-    if (started) {
-      expect(getToolContractFailureCode(await result.catch((error: unknown) => error))).toBe(
-        "output_contract",
-      );
-    } else {
-      await expect(result).resolves.toEqual(refusalValue);
-    }
-    f.expectNoSourceWork();
-  },
-);
 
 it.each(["gated", "blocked", "copied-refusal"] as const)(
   "does not exempt a tool-authored %s lookalike from the success contract",
