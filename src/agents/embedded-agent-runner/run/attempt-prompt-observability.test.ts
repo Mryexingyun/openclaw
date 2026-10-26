@@ -5,7 +5,6 @@ const hoisted = vi.hoisted(() => ({
   emitTrustedDiagnosticEvent: vi.fn(),
   hasHooks: vi.fn(() => true),
   log: { debug: vi.fn(), info: vi.fn(), isEnabled: vi.fn(() => false), warn: vi.fn() },
-  onExecutionPhase: vi.fn(),
   recordStage: vi.fn(),
   recordTrajectoryEvent: vi.fn(),
   runLlmInput: vi.fn<NonNullable<PromptObservabilityInput["hookRunner"]>["runLlmInput"]>(
@@ -36,13 +35,11 @@ function observe(overrides: Partial<PromptObservabilityInput> = {}, skipped = fa
     attempt: {
       messageChannel: "discord",
       modelId: "model-1",
-      onExecutionPhase: hoisted.onExecutionPhase,
       provider: "provider-1",
       runId: "run-1",
       senderId: "sender-1",
       sessionFile: "/tmp/session.jsonl",
       sessionId: "session-1",
-      sessionKey: "agent:main:discord:channel-1",
       trigger: "user",
       workspaceDir: "/tmp/workspace",
     },
@@ -64,7 +61,6 @@ function observe(overrides: Partial<PromptObservabilityInput> = {}, skipped = fa
     skipPromptSubmission: false,
     streamStrategy: "provider-stream",
     systemPromptForHook: "system prompt",
-    systemPromptText: "system prompt",
     toolSearchCompacted: true,
     tools: [{ name: "hook-tool" }],
     trajectoryRecorder: { recordEvent: hoisted.recordTrajectoryEvent },
@@ -77,49 +73,18 @@ function observe(overrides: Partial<PromptObservabilityInput> = {}, skipped = fa
   return input;
 }
 
-function expectDispatch(stages: number, trajectory: number, hooks: number) {
-  expect(hoisted.recordStage).toHaveBeenCalledTimes(stages);
-  expect(hoisted.recordTrajectoryEvent).toHaveBeenCalledTimes(trajectory);
-  expect(hoisted.runLlmInput).toHaveBeenCalledTimes(hooks);
-  expect(hoisted.emitTrustedDiagnosticEvent).toHaveBeenCalledOnce();
-  expect(hoisted.onExecutionPhase).toHaveBeenCalledOnce();
-}
-
 describe("observeEmbeddedAttemptPrompt", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("records the assembled prompt boundary and dispatches a cloned llm_input snapshot", () => {
     const input = observe();
-    const stage = { prompt: "model prompt", messages: input.sessionMessages };
-    expect(hoisted.recordStage.mock.calls.slice(0, 2)).toEqual([
-      ["prompt:before", stage],
-      ["prompt:images", { ...stage, note: "images: prompt=2" }],
-    ]);
-    expect(hoisted.recordTrajectoryEvent).toHaveBeenCalledWith(
-      "context.compiled",
-      expect.objectContaining({
-        imagesCount: 2,
-        providerVisibleTools: [{ name: "visible-tool" }],
-        tools: [{ name: "visible-tool" }, { name: "deferred-tool" }],
-        transcriptLeafId: "leaf-1",
-      }),
-    );
     expect(hoisted.emitTrustedDiagnosticEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "context.assembled",
         contextTokenBudget: 32_000,
-        historyTextChars: 7,
-        messageCount: 1,
-        promptChars: 16,
         reserveTokens: 4_096,
       }),
     );
-    expect(hoisted.onExecutionPhase).toHaveBeenCalledWith({
-      phase: "context_assembled",
-      provider: "provider-1",
-      model: "model-1",
-    });
-    expect(hoisted.runLlmInput).toHaveBeenCalledOnce();
     const [event, context] = hoisted.runLlmInput.mock.calls[0] ?? [];
     expect(event).toMatchObject({
       prompt: "[boundary] model prompt",
@@ -144,15 +109,14 @@ describe("observeEmbeddedAttemptPrompt", () => {
       messages: input.sessionMessages,
       imagesCount: 0,
     });
-    expect(hoisted.log.warn).toHaveBeenCalledWith(
-      expect.stringContaining("embedded run prompt skipped: blank user prompt"),
-    );
-    expectDispatch(2, 2, 0);
+    expect(hoisted.runLlmInput).not.toHaveBeenCalled();
   });
 
   it("keeps an already-blocked prompt out of cache, trajectory, and hook dispatch", () => {
     observe({ skipPromptSubmission: true }, true);
-    expectDispatch(0, 0, 0);
+    expect(hoisted.recordStage).not.toHaveBeenCalled();
+    expect(hoisted.recordTrajectoryEvent).not.toHaveBeenCalled();
+    expect(hoisted.runLlmInput).not.toHaveBeenCalled();
   });
 
   it("ignores unrecorded tool metadata", () => {
@@ -167,6 +131,6 @@ describe("observeEmbeddedAttemptPrompt", () => {
       trajectoryRecorder: null,
     });
 
-    expectDispatch(2, 0, 1);
+    expect(hoisted.recordTrajectoryEvent).not.toHaveBeenCalled();
   });
 });

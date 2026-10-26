@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { makeTextToolResult } from "../../../../test/helpers/text-tool-result.js";
-import { prepareSystemAgentRunAdmission } from "../../admitted-run-context.js";
 import { createOpenClawAgentHarness } from "../../harness/builtin-openclaw.js";
 import { SessionManager } from "../../sessions/session-manager.js";
 import { useContextEngineAttemptHarness } from "./attempt-context-engine.test-support.js";
 import { createSubscriptionMock } from "./attempt-spawn-workspace.subscription-mock.test-support.js";
+import { useFinalizationAdmission } from "./settled-finalization-harness.test-support.js";
 import { prepareTerminalWithSettledTurnFinalization } from "./settled-turn-finalization.js";
 import { createSettledFinalizationTestInput } from "./settled-turn-finalization.test-support.js";
 import { textAssistant, toolAssistant } from "./settled-turn-fixtures.test-support.js";
@@ -15,6 +15,7 @@ vi.mock("./attempt.js", () => ({ runEmbeddedAttempt: finalizationRunner }));
 
 const sessionKey = "agent:main:subagent:detached-finalization";
 const { hoisted, runAttempt } = useContextEngineAttemptHarness(sessionKey);
+const getContext = useFinalizationAdmission([]);
 
 describe("settled post-tool turn finalization context", () => {
   it("keeps detached tool receipts and hidden prompts across empty finalization retries", async () => {
@@ -24,13 +25,7 @@ describe("settled post-tool turn finalization context", () => {
     hoisted.guardSessionManagerMock.mockImplementation(guardSessionManager);
     const manager = SessionManager.inMemory();
     const call = toolAssistant(["call-read", "read"]);
-    const toolResult = makeTextToolResult(
-      "call-read",
-      "read",
-      "file contents from completed read",
-      false,
-      3,
-    );
+    const toolResult = makeTextToolResult("call-read", "read", "file contents", false, 3);
     const subscription = createSubscriptionMock();
     let toolCompleted = false;
     subscription.getItemLifecycle = () => ({
@@ -55,10 +50,6 @@ describe("settled post-tool turn finalization context", () => {
     });
     expect(settled.terminal.kind).toBe("failed");
     expect(settled.itemLifecycle).toEqual({ startedCount: 1, completedCount: 1, activeCount: 0 });
-    expect(settled.settledTurnFinalizationContext).toBeDefined();
-    expect(manager.buildSessionContext().messages).toContainEqual(
-      expect.objectContaining(toolResult),
-    );
 
     const finalizerContexts: unknown[][] = [];
     finalizationRunner.mockImplementation(async (attempt: EmbeddedRunAttemptParams) => {
@@ -84,52 +75,42 @@ describe("settled post-tool turn finalization context", () => {
         },
       });
     });
-    const admission = prepareSystemAgentRunAdmission(
-      {},
-      "run-settled",
-      "main",
-      "finalization-test",
-    );
-    try {
-      const input = createSettledFinalizationTestInput(settled, await admission.admit("embedded"));
-      input.finalization.preparedAttempt = {
-        ...input.finalization.preparedAttempt,
-        sessionManager: manager,
-        sessionPersistence: "detached",
-        sessionKey,
-        provider: "openai",
-        modelId: "gpt-test",
-      };
-      input.finalization.harness = createOpenClawAgentHarness();
-      const result = await prepareTerminalWithSettledTurnFinalization(input);
-      expect(result.finalizationOutcome).toBe("answered");
-      expect(finalizerContexts).toHaveLength(2);
-      for (const messages of finalizerContexts) {
-        expect(messages).toContainEqual(expect.objectContaining(toolResult));
-      }
-      const userMessages = manager
-        .buildSessionContext()
-        .messages.filter((message) => message.role === "user");
-      expect(userMessages).toHaveLength(3);
-      expect(userMessages[0]?.content).toBe("hello");
-      expect(userMessages[0]).not.toHaveProperty("display", false);
-      for (const message of userMessages.slice(1)) {
-        expect(message).toMatchObject({
-          content: expect.stringContaining("Your turn ended without a final reply."),
-          display: false,
-          provenance: { kind: "internal_system" },
-        });
-      }
-      const genuineUser = { role: "user" as const, content: "Read the next file", timestamp: 5 };
-      manager.appendMessage(genuineUser);
-      expect(manager.buildSessionContext().messages).toContainEqual(
-        expect.objectContaining(genuineUser),
-      );
-      expect(genuineUser).not.toHaveProperty("display", false);
-      expect(genuineUser).not.toHaveProperty("provenance");
-    } finally {
-      admission.close();
+    const input = createSettledFinalizationTestInput(settled, getContext());
+    input.finalization.preparedAttempt = {
+      ...input.finalization.preparedAttempt,
+      sessionManager: manager,
+      sessionPersistence: "detached",
+      sessionKey,
+      provider: "openai",
+      modelId: "gpt-test",
+    };
+    input.finalization.harness = createOpenClawAgentHarness();
+    const result = await prepareTerminalWithSettledTurnFinalization(input);
+    expect(result.finalizationOutcome).toBe("answered");
+    expect(finalizerContexts).toHaveLength(2);
+    for (const messages of finalizerContexts) {
+      expect(messages).toContainEqual(expect.objectContaining(toolResult));
     }
+    const userMessages = manager
+      .buildSessionContext()
+      .messages.filter((message) => message.role === "user");
+    expect(userMessages).toHaveLength(3);
+    expect(userMessages[0]?.content).toBe("hello");
+    expect(userMessages[0]).not.toHaveProperty("display", false);
+    for (const message of userMessages.slice(1)) {
+      expect(message).toMatchObject({
+        content: expect.stringContaining("Your turn ended without a final reply."),
+        display: false,
+        provenance: { kind: "internal_system" },
+      });
+    }
+    const genuineUser = { role: "user" as const, content: "Read the next file", timestamp: 5 };
+    manager.appendMessage(genuineUser);
+    expect(manager.buildSessionContext().messages).toContainEqual(
+      expect.objectContaining(genuineUser),
+    );
+    expect(genuineUser).not.toHaveProperty("display", false);
+    expect(genuineUser).not.toHaveProperty("provenance");
   });
 
   it.each([

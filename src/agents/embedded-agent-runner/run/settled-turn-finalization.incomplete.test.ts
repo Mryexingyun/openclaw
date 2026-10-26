@@ -185,19 +185,17 @@ it.each([
               stopReason,
               completion: { stopReason, finishReason: stopReason },
             });
+            expect(deliveredText?.includes(cutoffNotice)).toBe(interrupted);
+            const phases = lifecycle.map((event) => event.phase);
+            expect.soft(phases).toContain(interrupted ? "error" : "end");
+            expect.soft(phases).not.toContain(interrupted ? "end" : "error");
             if (interrupted) {
-              expect(deliveredText).toContain(cutoffNotice);
               expect.soft(result.meta.error).toMatchObject({
                 kind: "incomplete_turn",
                 fallbackSafe: false,
               });
-              expect.soft(lifecycle.filter((event) => event.phase === "end")).toEqual([]);
-              expect.soft(lifecycle).toContainEqual(expect.objectContaining({ phase: "error" }));
             } else {
-              expect(deliveredText).not.toContain(cutoffNotice);
               expect(result.meta.error).toBeUndefined();
-              expect(lifecycle.filter((event) => event.phase === "error")).toEqual([]);
-              expect(lifecycle).toContainEqual(expect.objectContaining({ phase: "end" }));
             }
           } finally {
             admission.close();
