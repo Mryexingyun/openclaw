@@ -54,36 +54,30 @@ async function createDirectory(
     ...createChannelTestPluginBase({ id: "reef" }),
     directory: {
       listPeers: async () =>
-        (params.peerIds ?? ["peer"]).map((id) => ({
-          kind: "user" as const,
-          id,
-          name: "Synthetic peer",
-        })),
+        (params.peerIds ?? ["peer"]).map((id) => ({ kind: "user" as const, id })),
     },
   }));
-  const deps = {
-    resolveOutboundSessionRoute: async ({ target }: { target: string }) => {
-      routed.resolve();
-      return {
-        sessionKey: `agent:${agentId}:reef:direct:${target}`,
-        baseSessionKey: `agent:${agentId}:reef:direct:${target}`,
-        peer: { kind: "direct" as const, id: target },
-        chatType: "direct" as const,
-        from: `reef:${target}`,
-        to: `reef:${target}`,
-      };
-    },
+  const resolveRoute = async ({ target }: { target: string }) => {
+    routed.resolve();
+    return {
+      sessionKey: `agent:${agentId}:reef:direct:${target}`,
+      baseSessionKey: `agent:${agentId}:reef:direct:${target}`,
+      peer: { kind: "direct" as const, id: target },
+      chatType: "direct" as const,
+      from: `reef:${target}`,
+      to: `reef:${target}`,
+    };
   };
-  vi.spyOn(outboundSession, "resolveOutboundSessionRoute").mockImplementation((input) =>
-    deps.resolveOutboundSessionRoute(input),
-  );
+  const route = vi
+    .spyOn(outboundSession, "resolveOutboundSessionRoute")
+    .mockImplementation(resolveRoute);
   const list = (overrides: Partial<Parameters<typeof runGatewayConversationList>[0]> = {}) =>
     runGatewayConversationList({ config, agentId, channel: "reef", limit: 10, ...overrides });
   const expectStored = async (count: number) => {
     expect(await listConversations(scope)).toHaveLength(count);
     expect(listSessionEntriesCore(scope)).toEqual([]);
   };
-  return { config, deps, routed, scope, storePath, list, expectStored };
+  return { config, route, resolveRoute, routed, scope, storePath, list, expectStored };
 }
 
 describe("conversation directory write admission", () => {
@@ -115,10 +109,7 @@ describe("conversation directory write admission", () => {
       );
       const result = fixture
         .list({ readCurrentConfig: () => currentConfig })
-        .then(
-          (value) => ({ value }),
-          (error: unknown) => ({ error }),
-        )
+        .catch((error: unknown) => error)
         .finally(settled);
       try {
         await fixture.routed.promise;
@@ -137,9 +128,9 @@ describe("conversation directory write admission", () => {
         release.resolve();
         await blocker;
         if (eligibility === "unavailable") {
-          await expect(result).resolves.toEqual({
-            error: new Error("Conversation route ownership is temporarily unavailable"),
-          });
+          await expect(result).resolves.toEqual(
+            new Error("Conversation route ownership is temporarily unavailable"),
+          );
         } else {
           const conversations =
             eligibility === "eligible"
@@ -147,9 +138,7 @@ describe("conversation directory write admission", () => {
                   peerIds.map((id) => expect.objectContaining({ target: `reef:${id}` })),
                 )
               : [];
-          await expect(result).resolves.toMatchObject({
-            value: { conversations },
-          });
+          await expect(result).resolves.toMatchObject({ conversations });
         }
         await fixture.expectStored(eligibility === "eligible" ? peerIds.length : 0);
       } finally {
@@ -168,12 +157,11 @@ describe("conversation directory write admission", () => {
         physicalAgentId: "schema-owner",
       });
       const releaseRoute = createDeferredCore();
-      const routed = fixture.deps.resolveOutboundSessionRoute;
-      fixture.deps.resolveOutboundSessionRoute = async (params) => {
-        const route = await routed(params);
+      fixture.route.mockImplementation(async (params) => {
+        const route = await fixture.resolveRoute(params);
         await releaseRoute.promise;
         return route;
-      };
+      });
       const config = {
         ...fixture.config,
         session: { store: path.basename(fixture.storePath) },
