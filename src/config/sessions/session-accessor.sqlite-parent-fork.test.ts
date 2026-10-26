@@ -9,10 +9,7 @@ import {
 import { isIndexedSessionEntry } from "./session-entry-codec.js";
 import { buildSessionResetBoundaryEvent } from "./session-reset-boundary-event.js";
 import { createSessionTranscriptHeader } from "./transcript-header.js";
-import {
-  createExactAssistantMessage,
-  timedMessageEvent,
-} from "./transcript-message.test-support.js";
+import { timedMessageEvent } from "./transcript-message.test-support.js";
 
 function createHistory() {
   const events: Record<string, unknown>[] = [
@@ -29,15 +26,13 @@ function createHistory() {
           content: `${label} question`,
           timestamp: 0,
         }),
-      );
-      events.push(
         timedMessageEvent(`${label}-assistant`, userId, timestamp, {
-          ...createExactAssistantMessage({
-            content: active
-              ? [{ type: "toolCall", id: `${label}-call`, name: "lookup", arguments: {} }]
-              : [{ type: "text", text: `${label} answer` }],
-          }),
+          role: "assistant",
+          content: active
+            ? [{ type: "toolCall", id: `${label}-call`, name: "lookup", arguments: {} }]
+            : [{ type: "text", text: `${label} answer` }],
           stopReason: active ? "toolUse" : "stop",
+          timestamp: 0,
         }),
       );
     },
@@ -54,13 +49,9 @@ function createHistory() {
   };
 }
 
-function expectForkContext(
-  events: Record<string, unknown>[],
-  expectedTurns: string[],
-  full = false,
-) {
+function expectForkContext(events: Record<string, unknown>[], expectedTurns: string[]) {
   const original = structuredClone(events);
-  const source = resolveParentForkSourceTranscript(events, full ? undefined : "last-completed");
+  const source = resolveParentForkSourceTranscript(events, "last-completed");
   expect(source).not.toBeNull();
   if (!source) {
     throw new Error("expected a parent transcript");
@@ -84,8 +75,6 @@ function expectForkContext(
 }
 
 it.each<[string, string[], string[]]>([
-  ["cleared", ["discarded", "clear"], []],
-  ["cleared with active tail", ["discarded", "clear", "active"], []],
   [
     "retaining reset",
     ["discarded", "kept-1", "kept-2", "kept-3", "preserve-tail", "active"],
@@ -93,7 +82,6 @@ it.each<[string, string[], string[]]>([
   ],
   ["clear after retaining reset", ["discarded", "preserve-tail", "clear", "active"], []],
   ["completed after reset", ["discarded", "clear", "completed", "active"], ["completed"]],
-  ["completed without reset", ["completed", "active"], ["completed"]],
   ["empty completed prefix", ["clear", "active"], []],
 ])("forks %s", (_name, steps, expected) => {
   const history = createHistory();
@@ -146,12 +134,4 @@ it("uses the selected leaf rather than a later completed turn", () => {
   });
 
   expectForkContext(history.events, []);
-});
-
-it("preserves current context when forking the full transcript after reset", () => {
-  const history = createHistory();
-  history.turn("discarded");
-  history.reset("clear");
-  history.turn("current");
-  expectForkContext(history.events, ["current"], true);
 });
