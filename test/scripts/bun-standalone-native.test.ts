@@ -147,7 +147,7 @@ export function parse(text) { return require("syntax-library").parse(text); }`;
     });
     expect(entries).toEqual([
       "dist/scanner.js",
-      path.relative(root, path.join(parser, "index.cjs")),
+      path.relative(root, path.join(parser, "index.cjs")).split(path.sep).join("/"),
     ]);
     expect(native.builtinModules).toContain("node:os");
     fs.unlinkSync(path.join(root, "dist/scanner-hash.mjs"));
