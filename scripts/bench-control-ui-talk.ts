@@ -44,6 +44,7 @@ const { values } = parseArgs({
     viewport: { type: "string", default: "both" },
     "cpu-throttle": { type: "string", default: "1,4" },
     states: { type: "string", default: "listening,speaking,transcribing,idle,hidden" },
+    "focused-stop": { type: "boolean", default: false },
     aa: { type: "boolean", default: false },
     sample: { type: "boolean", default: false },
     trace: { type: "boolean", default: false },
@@ -78,6 +79,12 @@ if (values.frames && states.some((state) => state === "hidden" || state === "idl
   throw new Error(
     "--frames adds animation wakeups: select active states only for a separate diagnostic pass",
   );
+}
+if (
+  values["focused-stop"] &&
+  (values.frames || states.some((state) => state !== "listening" && state !== "idle"))
+) {
+  throw new Error("--focused-stop requires listening/idle states without --frames");
 }
 const artifactDir = createControlUiE2eArtifactDir("talk", values.output);
 const viewports = [
@@ -291,6 +298,7 @@ try {
     viewports,
     cpuRates,
     states,
+    focusedStop: values["focused-stop"],
     mode: values.trace || values.counters || values.frames ? "diagnostic" : "thread-cpu-comparison",
     instrumentation: {
       trace: values.trace,
@@ -300,16 +308,16 @@ try {
     },
     compareCss,
     contract:
-      "Production renderer; native oscillator microphone and native audio-element playback; synthetic WebRTC/provider events. No real-provider, network, hardware microphone, end-to-end audio latency, or battery-life claim. Playback latency measures the local native play() promise, not network round-trip. Transcript latency is provider-event dispatch to DOM observation, not INP. Idle means a connected Talk session without audio/transcript work; hidden means a connected listening session in an actually hidden document. Speaking means input/playback with 0.8Hz amplitude modulation, silenced at the audio element. Frame probe adds its own RAF loop, so run separately. All timers/animations retain native clocks.",
+      "Production renderer; native oscillator microphone and native audio-element playback; synthetic WebRTC/provider events. No real-provider, network, hardware microphone, end-to-end audio latency, or battery-life claim. Playback latency measures the local native play() promise, not network round-trip. Transcript latency is provider-event dispatch to DOM observation, not INP. Idle means a connected Talk session without audio/transcript work; hidden means a connected listening session in an actually hidden document. Speaking means input/playback with 0.8Hz amplitude modulation, silenced at the audio element. Frame probe adds its own RAF loop, so run separately. Focused-stop uses native Tab traversal and requires the Stop trigger, its own tooltip, and document focus to remain active throughout the interval. All timers/animations retain native clocks.",
     acceptance:
       "At least 10 interleaved pairs; aim for 40% active CPU reduction and near-zero idle/hidden renderer work. A clean >=5% CPU win may land; per-cell timing median regression <=5% with no p95 increase (or 20-pair confirmation). A/A identifies shared-host wall-time noise; never claim network/provider latency from this fixture.",
   };
   await writeFile(path.join(artifactDir, "manifest.json"), JSON.stringify(manifest, null, 2));
   const comparisons = [...(slots.length === 2 ? ["AB"] : ["A"]), ...(values.aa ? ["AA"] : [])];
-  for (const comparison of comparisons) {
-    for (const viewport of viewports) {
-      for (const cpuRate of cpuRates) {
-        for (let pair = 0; pair < pairs; pair++) {
+  for (const viewport of viewports) {
+    for (const cpuRate of cpuRates) {
+      for (let pair = 0; pair < pairs; pair++) {
+        for (const comparison of comparisons) {
           // Reverse alternate pairs to remove consistently first/second browser bias.
           const sides = comparison === "A" ? [0] : pair % 2 ? [1, 0] : [0, 1];
           for (const side of sides) {
@@ -460,6 +468,35 @@ try {
                   } else {
                     await page.waitForFunction(() => !document.hidden);
                   }
+                  if (values["focused-stop"]) {
+                    const stop = page.getByRole("button", {
+                      name: "Stop voice input",
+                      exact: true,
+                    });
+                    await page.mouse.move(1, 1);
+                    if (await stop.evaluate((element) => element === document.activeElement)) {
+                      // Re-enter through native keyboard navigation to establish focus modality.
+                      await page.keyboard.press("Tab");
+                      await page.keyboard.press("Shift+Tab");
+                    } else {
+                      let focused = false;
+                      for (let step = 0; step < 120; step++) {
+                        await page.keyboard.press("Tab");
+                        if (await stop.evaluate((element) => element === document.activeElement)) {
+                          focused = true;
+                          break;
+                        }
+                      }
+                      if (!focused) {
+                        throw new Error("Stop was not reachable within 120 native Tab steps");
+                      }
+                    }
+                    await page
+                      .locator("openclaw-tooltip")
+                      .filter({ has: stop })
+                      .locator('.tooltip-surface[data-phase="open"]')
+                      .waitFor({ state: "visible" });
+                  }
                   if (values["first-pair-screenshots"] && pair === 0 && state !== "hidden") {
                     await page.screenshot({ path: `${prefix}.png` });
                   }
@@ -477,8 +514,9 @@ try {
                     await page.evaluate(() => performance.mark("openclaw-talk-sample"));
                   }
                   await page.evaluate(
-                    (frames) => window.openclawTalkBench.start(frames),
-                    values.frames,
+                    ({ frames, focusedStop }) =>
+                      window.openclawTalkBench.start(frames, focusedStop),
+                    { frames: values.frames, focusedStop: values["focused-stop"] },
                   );
                   const beforeProcesses = await processes(browserCdp);
                   const beforeWakeups = wakeups(beforeProcesses);
@@ -506,6 +544,7 @@ try {
                       timeoutCallbacks,
                       animationCallbacks,
                       transcriptChunks,
+                      focusedStop,
                       transcriptLatenciesMs,
                       frameTimes,
                     } = snapshot;
@@ -517,6 +556,7 @@ try {
                       timeoutCallbacks,
                       animationCallbacks,
                       transcriptChunks,
+                      focusedStop,
                       transcriptLatenciesMs,
                       frameTimes,
                     };
@@ -625,6 +665,21 @@ try {
                   });
                   if (errors.length) {
                     throw new Error(`Page errors: ${errors.join("; ")}`);
+                  }
+                  if (
+                    values["focused-stop"] &&
+                    (!proof.focusedStop?.documentFocusedAtStart ||
+                      !proof.focusedStop.documentFocusedAtEnd ||
+                      !proof.focusedStop.triggerFocusedAtStart ||
+                      !proof.focusedStop.triggerFocusedAtEnd ||
+                      !proof.focusedStop.tooltipOpenAtStart ||
+                      !proof.focusedStop.tooltipOpenAtEnd ||
+                      proof.focusedStop.invalidated ||
+                      proof.focusedStop.tooltipChanges)
+                  ) {
+                    throw new Error(
+                      "Focused Stop observation lost document/trigger focus or its tooltip",
+                    );
                   }
                   if (state === "transcribing" && !proof.transcriptLatenciesMs.length) {
                     throw new Error("No streamed transcript reached the production DOM");

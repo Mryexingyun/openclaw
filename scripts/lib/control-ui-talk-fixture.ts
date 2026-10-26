@@ -90,11 +90,21 @@ export type TalkBenchProof = {
   timeoutCallbacks: number;
   animationCallbacks: number;
   transcriptChunks: number;
+  focusedStop?: {
+    documentFocusedAtStart: boolean;
+    documentFocusedAtEnd: boolean;
+    triggerFocusedAtStart: boolean;
+    triggerFocusedAtEnd: boolean;
+    tooltipOpenAtStart: boolean;
+    tooltipOpenAtEnd: boolean;
+    tooltipChanges: number;
+    invalidated: boolean;
+  };
   transcriptLatenciesMs: number[];
   playbackStartLatenciesMs: number[];
   frameTimes: number[];
   setState: (state: TalkBenchState) => void;
-  start: (frames: boolean) => void;
+  start: (frames: boolean, focusedStop?: boolean) => void;
   stop: () => void;
 };
 
@@ -123,6 +133,7 @@ export async function installTalkPerfFixture(page: Page, includeCounters: boolea
       let timer: ReturnType<typeof setTimeout> | undefined;
       let frame: number | undefined;
       let observer: MutationObserver | undefined;
+      let finishFocusedStop: (() => void) | undefined;
       let observing = false;
       const pending = new Map<string, number>();
       const proof: TalkBenchProof = {
@@ -190,7 +201,7 @@ export async function installTalkPerfFixture(page: Page, includeCounters: boolea
             tick();
           }
         },
-        start(frames) {
+        start(frames, focusedStop = false) {
           observing = true;
           proof.analyserReads =
             proof.intervalCallbacks =
@@ -201,7 +212,50 @@ export async function installTalkPerfFixture(page: Page, includeCounters: boolea
           proof.meterStyleMutations = proof.meterDataMutations = 0;
           proof.transcriptLatenciesMs = [];
           proof.frameTimes = [];
+          proof.focusedStop = undefined;
+          const trigger = focusedStop ? document.activeElement : null;
+          const tooltip = trigger?.closest("openclaw-tooltip");
+          if (focusedStop) {
+            if (
+              !(trigger instanceof HTMLButtonElement) ||
+              trigger.getAttribute("aria-label") !== "Stop voice input" ||
+              !tooltip
+            ) {
+              throw new Error("Native keyboard focus did not reach the Stop trigger");
+            }
+            const focus = {
+              documentFocusedAtStart: document.hasFocus(),
+              documentFocusedAtEnd: false,
+              triggerFocusedAtStart: document.activeElement === trigger,
+              triggerFocusedAtEnd: false,
+              tooltipOpenAtStart: tooltip.hasAttribute("open"),
+              tooltipOpenAtEnd: false,
+              tooltipChanges: 0,
+              invalidated: false,
+            };
+            proof.focusedStop = focus;
+            const invalidate = () => {
+              focus.invalidated = true;
+            };
+            window.addEventListener("blur", invalidate);
+            trigger.addEventListener("focusout", invalidate);
+            finishFocusedStop = () => {
+              focus.documentFocusedAtEnd = document.hasFocus();
+              focus.triggerFocusedAtEnd = document.activeElement === trigger;
+              focus.tooltipOpenAtEnd = tooltip.hasAttribute("open");
+              window.removeEventListener("blur", invalidate);
+              trigger.removeEventListener("focusout", invalidate);
+            };
+          }
           observer = new MutationObserver((records) => {
+            if (proof.focusedStop) {
+              proof.focusedStop.tooltipChanges += records.filter(
+                (record) =>
+                  record.type === "attributes" &&
+                  record.attributeName === "open" &&
+                  record.target === tooltip,
+              ).length;
+            }
             if (counters) {
               for (const record of records) {
                 if (
@@ -235,8 +289,12 @@ export async function installTalkPerfFixture(page: Page, includeCounters: boolea
             subtree: true,
             childList: true,
             characterData: true,
-            attributes: counters,
-            attributeFilter: counters ? ["style", "data-level", "data-status"] : undefined,
+            attributes: counters || focusedStop,
+            attributeFilter: counters
+              ? ["style", "data-level", "data-status", ...(focusedStop ? ["open"] : [])]
+              : focusedStop
+                ? ["open"]
+                : undefined,
           });
           if (frames) {
             const tick = (time: number) => {
@@ -255,6 +313,8 @@ export async function installTalkPerfFixture(page: Page, includeCounters: boolea
             cancelAnimationFrame(frame);
           }
           observer?.disconnect();
+          finishFocusedStop?.();
+          finishFocusedStop = undefined;
         },
       };
       window.openclawTalkBench = proof;
