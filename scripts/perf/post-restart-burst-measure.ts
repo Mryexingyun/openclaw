@@ -1367,6 +1367,7 @@ async function connect(
   );
   const client = createGatewayWsClient({
     url: `ws://127.0.0.1:${port}`,
+    ...(values["from-listening"] ? { origin: `http://127.0.0.1:${port}` } : {}),
     ...(options?.proxy
       ? {
           headers: {
