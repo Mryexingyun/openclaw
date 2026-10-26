@@ -32,6 +32,65 @@ async function matchingNames(catalog: InstalledSkill[], query: string) {
 }
 
 describe("installed skill catalog", () => {
+  it("reuses decoded file revisions across fresh catalogs without serializing their bodies", async () => {
+    const directory = temps.make("skill-body-revision-");
+    const filePath = path.join(directory, "SKILL.md");
+    const content = "Astrolabe instructions for spectroscopy";
+    await fs.writeFile(filePath, content);
+    const decode = vi.spyOn(Buffer.prototype, "toString");
+    const serialize = vi.spyOn(JSON, "stringify");
+    for (const name of ["first", "second", "third"]) {
+      const guide = skill(name, "Guide");
+      guide.source = { filePath };
+      expect(await matchingNames([guide], "astrolabe")).toEqual([name]);
+    }
+    expect(decode.mock.results.filter((result) => result.value === content)).toHaveLength(1);
+    expect(
+      serialize.mock.calls.filter(([value]) => Array.isArray(value) && value.includes(content)),
+    ).toHaveLength(0);
+  });
+
+  it("refreshes body facts after edits, replacement and removal of the admitted file", async () => {
+    const directory = temps.make("skill-body-edits-");
+    const filePath = path.join(directory, "SKILL.md");
+    const guide = skill("guide", "Guide");
+    guide.source = { filePath };
+    await fs.writeFile(filePath, "quasars");
+    const original = await fs.stat(filePath);
+    expect(await matchingNames([guide], "quasars")).toEqual(["guide"]);
+    await fs.writeFile(filePath, "pulsars");
+    await fs.utimes(filePath, original.atime, original.mtime);
+    expect(await matchingNames([guide], "quasars")).toEqual([]);
+    expect(await matchingNames([guide], "pulsars")).toEqual(["guide"]);
+    const replacement = path.join(directory, "replacement");
+    await fs.writeFile(replacement, "nebulae");
+    await fs.utimes(replacement, original.atime, original.mtime);
+    await fs.rename(replacement, filePath);
+    expect(await matchingNames([guide], "nebulae")).toEqual(["guide"]);
+    await fs.unlink(filePath);
+    expect(await searchBodies([guide], "nebulae")).toMatchObject({
+      skills: [],
+      coverage: { bodyIndexed: 0, metadataOnly: 1, truncatedBodies: 0 },
+    });
+  });
+
+  it("keeps decoded revisions separate for interleaved body byte budgets", async () => {
+    const directory = temps.make("skill-body-budgets-");
+    const filePath = path.join(directory, "SKILL.md");
+    await fs.writeFile(filePath, `${" ".repeat(6_000)}Canary`);
+    const guide = skill("guide", "Guide");
+    guide.source = { filePath };
+    const opaque = Array.from({ length: 1_023 }, (_, index) => ({
+      ...skill(`opaque-${index}`, "Guide"),
+      reader: async () => "Opaque",
+    }));
+    for (const broad of [true, false, true, false]) {
+      expect(await matchingNames(broad ? [guide, ...opaque] : [guide], "canary")).toEqual(
+        broad ? [] : ["guide"],
+      );
+    }
+  });
+
   it("searches bounded inline bodies without encoding them again", async () => {
     const catalog = [
       skill("plain", "Guide", "Spectroscopy"),
