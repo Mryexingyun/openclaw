@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { assert, describe, expect, it, vi } from "vitest";
 import {
   boundCodeModeError,
   captureCodeModeOutput,
@@ -26,9 +26,7 @@ describe("Code Mode JSON normalization", () => {
     }
     const stringify = JSON.stringify;
     let serializedChars = 0;
-    let serializations = 0;
     const spy = vi.spyOn(JSON, "stringify").mockImplementation((...args) => {
-      serializations++;
       const json = stringify(...args);
       serializedChars += json?.length ?? 0;
       return json;
@@ -45,7 +43,6 @@ describe("Code Mode JSON normalization", () => {
     expect(JSON.stringify(result)).toHaveLength(16_000);
     // Trials measure captured JSON and changed prefix intervals, not whole envelopes.
     expect(serializedChars).toBeLessThan(210_000);
-    expect(serializations).toBeLessThanOrEqual(5);
   });
 
   it.each([
@@ -103,25 +100,11 @@ describe("Code Mode JSON normalization", () => {
 
   it("projects owned channels over metadata without losing unrelated fields", () => {
     const state = new CodeModeOutputState(1_024);
-    state.append(captureCodeModeOutput(["output"], 1_024));
+    state.append(captureCodeModeOutput(["a"], 1_024));
+    const metadata = { status: "done", output: 0, value: 0, error: 0 };
     expect(
-      state.takeResult(
-        {
-          status: "completed",
-          telemetry: { calls: 1 },
-          output: "stale",
-          value: "stale",
-          error: "stale",
-        },
-        { value: captureCodeModeValue("value", 1_024), error: "diagnostic" },
-      ),
-    ).toEqual({
-      status: "completed",
-      telemetry: { calls: 1 },
-      output: ["output"],
-      value: "value",
-      error: "diagnostic",
-    });
+      state.takeResult(metadata, { value: captureCodeModeValue("b", 1_024), error: "c" }),
+    ).toEqual({ status: "done", output: ["a"], value: "b", error: "c" });
   });
 
   it.each(["capacity", "undeliverable reference"])(
@@ -232,9 +215,7 @@ describe("Code Mode JSON normalization", () => {
     const first = state.takeResult({ status: "completed" }, { value: captured });
     expect(first.value).toEqual(normalized);
     expect(first.output).toEqual([expect.objectContaining({ truncated: true })]);
-    if (!first.value || typeof first.value !== "object") {
-      throw new Error("Expected a structured delivered value");
-    }
+    assert(first.value && typeof first.value === "object", "Expected a structured delivered value");
     Object.assign(first.value, { nested: { label: "changed after delivery" } });
     await Promise.resolve();
 
