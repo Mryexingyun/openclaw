@@ -316,5 +316,5 @@ try {
   await agentDb.closeOpenClawAgentDatabasesAsync();
   await stateDb.closeOpenClawStateDatabaseAsync();
   await lifecycle.drainGlobalSingletonLifecycleState("close");
-  (await import("esbuild")).stop();
+  await (await import("esbuild")).stop();
 }
