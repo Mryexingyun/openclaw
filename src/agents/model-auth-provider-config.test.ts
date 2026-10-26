@@ -201,8 +201,9 @@ it("skips configured model scans for complete routes while filling missing route
   delete provider.apiKey;
   provider.api = "anthropic-messages";
   const localBaseUrl = "http://127.0.0.1:11434/v1";
-  provider.models[99].api = "openai-completions";
-  provider.models[99].baseUrl = localBaseUrl;
+  const localModel = provider.models[99]!;
+  localModel.api = "openai-completions";
+  localModel.baseUrl = localBaseUrl;
   let catalogReads = 0;
   for (const entry of provider.models) {
     const id = entry.id;
