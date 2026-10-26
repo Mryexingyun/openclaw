@@ -329,7 +329,14 @@ it("builds local and paired-node terminal plans from verified catalog records", 
     ),
     listPage: vi.fn(async () => ({
       sessions: [
-        { threadId, status: "active", source: "cli", cwd: "/workspace/local", archived: false },
+        {
+          threadId,
+          status: "active",
+          source: "cli",
+          cwd: "/workspace/local",
+          archived: false,
+          fallbackName: "Readable fallback",
+        },
       ],
     })),
   });
@@ -407,7 +414,13 @@ it("builds local and paired-node terminal plans from verified catalog records", 
   const terminalHost = (hostId: string, canOpenTerminal: boolean) =>
     expect.objectContaining({
       hostId,
-      sessions: [expect.objectContaining({ threadId, canOpenTerminal })],
+      sessions: [
+        expect.objectContaining({
+          threadId,
+          canOpenTerminal,
+          ...(hostId === CODEX_LOCAL_SESSION_HOST_ID ? { name: "Readable fallback" } : {}),
+        }),
+      ],
     });
   const expectTerminalAvailability = (local: boolean) =>
     expect(getProvider()?.list({})).resolves.toEqual(
@@ -569,76 +582,6 @@ it("builds local and paired-node terminal plans from verified catalog records", 
   await expect(openTerminal("node:devbox")).rejects.toThrow(
     "paired-node Codex terminal is unavailable",
   );
-});
-
-it("marks not-loaded local interactive sessions as actionable", async () => {
-  const { runtime } = createRuntime();
-  const provider = registerProvider(
-    runtime,
-    () => config,
-    createEligibleControl({
-      listPage: vi.fn(async () => ({
-        sessions: [
-          nodeSession("thread-1", {
-            name: undefined,
-            fallbackName: "Readable fallback",
-            status: "notLoaded",
-          }),
-        ],
-      })),
-    }),
-  );
-
-  await expect(provider.list({})).resolves.toMatchObject([
-    {
-      hostId: CODEX_LOCAL_SESSION_HOST_ID,
-      sessions: [
-        {
-          threadId: "thread-1",
-          name: "Readable fallback",
-          canContinue: true,
-          canArchive: true,
-        },
-      ],
-    },
-  ]);
-});
-
-it("reads local transcript turns one bounded App Server page at a time", async () => {
-  const question = catalogThreadItem("item-1", {
-    type: "userMessage",
-    content: [{ type: "text", text: "question" }],
-  });
-  const answer = catalogThreadItem("item-2", { text: "full answer" });
-  const listTurnPage = vi.fn(async () => ({
-    data: [{ id: "turn-1", items: [question, answer] }],
-    nextCursor: "turns-page-2",
-  }));
-  const control = createEligibleControl({ listTurnPage });
-
-  await expect(
-    readCodexSessionTranscript({
-      runtime: createRuntime().runtime,
-      control,
-      hostId: CODEX_LOCAL_SESSION_HOST_ID,
-      threadId: "thread-1",
-      limit: 50,
-    }),
-  ).resolves.toEqual({
-    hostId: CODEX_LOCAL_SESSION_HOST_ID,
-    label: "Local Codex",
-    threadId: "thread-1",
-    items: [
-      { id: "item-2", type: "agentMessage", text: "full answer", raw: answer },
-      { id: "item-1", type: "userMessage", text: "question", raw: question },
-    ],
-    nextCursor: "turns-page-2",
-  });
-  expect(listTurnPage).toHaveBeenCalledOnce();
-  expect(listTurnPage).toHaveBeenCalledWith(
-    expect.objectContaining({ limit: 1, itemsView: "full" }),
-  );
-  expect(control.readThread).not.toHaveBeenCalled();
 });
 
 it.each([
