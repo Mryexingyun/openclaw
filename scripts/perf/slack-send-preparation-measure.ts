@@ -14,7 +14,6 @@ import { registerHooks, stripTypeScriptTypes } from "node:module";
 import { loadavg } from "node:os";
 import { setImmediate as nextTurn } from "node:timers/promises";
 import { parseArgs } from "node:util";
-import type { Block, WebClient } from "@slack/web-api";
 import type { SlackBasePostMessagePayload } from "../../extensions/slack/src/post-message-payload.js";
 import type { OpenClawConfig } from "../../src/config/types.js";
 import { startGatewayBenchDiagnostics } from "../lib/gateway-bench-diagnostics.ts";
@@ -44,6 +43,7 @@ const { sendMessageSlack } = await import("../../extensions/slack/src/send.js");
 hooks.deregister();
 assert(ownerLoaded, "The selected Slack send owner must be loaded");
 type SendOptions = Parameters<typeof sendMessageSlack>[2];
+type WebClient = NonNullable<SendOptions["client"]>;
 type WireRequest = SlackBasePostMessagePayload;
 const cfg: OpenClawConfig = {
   channels: {
@@ -82,7 +82,7 @@ const legacyBlocks = [
   { type: "section", text: { type: "plain_text", text: "Ready for delivery" } },
 ];
 const channel = "C1234567890";
-const post = (text: string, extras: Partial<WireRequest> = {}): WireRequest => ({
+const post = (text: string, extras: Pick<WireRequest, "blocks" | "mrkdwn"> = {}): WireRequest => ({
   channel,
   text,
   ...extras,
@@ -124,7 +124,7 @@ const scenarios: Array<{
   {
     name: "native-table",
     text: "Overview",
-    options: { blocks: [nativeTable satisfies Block] },
+    options: { blocks: [nativeTable] },
     expected: post(
       `Overview\n\nPipeline (table)\n${[headers, ...rows].map((row) => row.join("\t")).join("\n")}`,
       { blocks: [nativeTable], mrkdwn: false },
