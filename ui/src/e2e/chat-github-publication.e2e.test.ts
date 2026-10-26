@@ -26,7 +26,10 @@ import {
 import { createLightDesktopControlUiContextOptions } from "./control-ui-browser-options.test-support.ts";
 import { createControlUiE2eSuite } from "./control-ui-e2e-suite.test-support.ts";
 
-const suite = createControlUiE2eSuite({ name: "Control UI personal GitHub publication" });
+const suite = createControlUiE2eSuite({
+  name: "Control UI personal GitHub publication",
+  trackBrowserContexts: true,
+});
 
 function viewer(id: string, name: string): ControlUiMockPresenceUser[] {
   return [{ self: true, id, identity: { type: "profile", id }, name }];
