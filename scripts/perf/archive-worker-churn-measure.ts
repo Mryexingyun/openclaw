@@ -258,7 +258,11 @@ try {
   const database = agentDb.openOpenClawAgentDatabase(options);
   const archive = coldState.readSessionColdTranscript(database.db, oldId);
   assert(archive);
-  const bytes = await codec.readVerifiedSessionColdArchive({ storePath: database.path, archive });
+  assert.equal(archive.storage, "file");
+  const bytes = await codec.readVerifiedSessionColdArchive({
+    storePath: database.path,
+    archive: { ...archive, archive_blob: null },
+  });
   const records = codec.decodeSessionColdRecords(bytes, archive);
   assert.deepEqual(
     records
