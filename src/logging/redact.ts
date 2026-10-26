@@ -506,13 +506,18 @@ function isEmptyShellParameterExpansionTail(token: string): boolean {
 // command text that any surface re-emits or replays (tool lifecycle events, progress lines,
 // approval previews, transcripts, follow-up turns that copy a command back into exec) then
 // fails in bash with `syntax error near unexpected token` / `unexpected EOF while looking for
-// matching ...`, long before the secret would have been resolved. Partial openers carry no
-// literal secret by definition - the value is resolved by the shell at run time from a file,
-// variable, or subprocess - and everything after the first space was never masked anyway, so
-// preserving them leaks nothing the old output did not already show. Balanced forms (quoted
-// `TOKEN="***"` captures, complete `$(...)` chunks) still mask exactly as before and render as
-// syntactically valid `***`. Known secret *values* remain protected by the registered-value
-// exact pass and the vendor-token grammars, which run independently of this branch.
+// matching ...`, long before the secret would have been resolved. This exemption is applied
+// only to the shell/env assignment rules (shellReferencePreservingPatterns), which are the
+// rules whose captured chunk is shell syntax rather than credential material: partial openers
+// there carry no literal secret by definition - the value is resolved by the shell at run time
+// from a file, variable, or subprocess - and everything after the first space was never masked
+// anyway, so preserving them leaks nothing the old output did not already show. Balanced forms
+// (quoted `TOKEN="***"` captures, complete `$(...)` chunks) still mask exactly as before and
+// render as syntactically valid `***`, and opaque-credential rules (URL userinfo, connection
+// strings, structured auth headers, operator patterns) keep masking their captured value whole
+// even when it begins with `$(`, because there the capture is the credential itself. Known
+// secret *values* remain protected by the registered-value exact pass and the vendor-token
+// grammars, which run independently of this branch.
 function isPartialShellExpansion(token: string): boolean {
   const body = token.replace(/^\\+/u, "");
   const first = body[0];
@@ -580,10 +585,14 @@ function prepareRedactionCapture(
       ) {
         return undefined;
       }
-      // Shell-grammar guard: masking a partial expansion opener would leave an orphan close
-      // delimiter and break shell parsing wherever the redacted text is replayed or re-emitted.
-      // See isPartialShellExpansion.
-      if (isPartialShellExpansion(token)) {
+      // Shell-grammar guard, scoped to the shell/env assignment rules that own expansion
+      // semantics (shellReferencePreservingPatterns): masking a partial expansion opener there
+      // would leave an orphan close delimiter and break shell parsing wherever the redacted
+      // text is re-emitted or replayed. See isPartialShellExpansion.
+      // Opaque-credential captures (URL userinfo, connection strings, structured auth headers,
+      // operator-configured patterns) are deliberately NOT exempted: in those rules the captured
+      // value is the credential itself, even when it begins with `$(`.
+      if (isShellReferencePattern && isPartialShellExpansion(token)) {
         return undefined;
       }
       // Assignment values can legitimately include trailing shell/structural characters

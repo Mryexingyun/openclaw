@@ -187,22 +187,31 @@ describe("redactSensitiveText", () => {
     // Regression: masking only the opener chunk of a command substitution like
     // TOKEN=$(cat ~/.openclaw/secrets/key) produced `TOKEN=*** ~/.openclaw/secrets/key)` - an
     // orphan `)` that fails bash parsing ("syntax error near unexpected token `)`) wherever the
-    // redacted command text is replayed or re-emitted through exec. Partial expansion openers
-    // must survive masking; quoted captures and literal secrets must still be masked.
+    // redacted command text is replayed or re-emitted through exec. The exemption is scoped to
+    // the shell/env assignment rules; quoted captures, literal secrets and opaque-credential
+    // captures must still be masked.
     // Built without literal `$(` sequences so the corpus survives redaction of this very file
     // in logs, transcripts, and tool events.
     const openParen = String.fromCharCode(36, 40); // $ + (
-    const substitutionCases = [
+    const assignmentCases = [
       `TOKEN=${openParen}cat ~/.openclaw/secrets/svc-panel-token); code=${openParen}curl -s -o /tmp/svc.json -X POST https://panel.example.test/api/renew)`,
       `OPENAI_API_KEY=${openParen}cat ~/.openclaw/secrets/key)`,
       `export TOKEN=${openParen}cat ~/.secrets/x) && curl -s https://example.test`,
+      // `${MY_TOKEN}` is a balanced expansion, so it never reaches the partial-opener branch and
+      // keeps the pre-existing shell-reference preservation behavior.
       'curl -s -H "Authorization: Bearer ${MY_TOKEN}" https://api.example.test/v1',
-      `curl --header "X-API-Key: ${openParen}cat /secrets/k)" https://example.test`,
-      `wget --password=${openParen}cat /secrets/pw) https://example.test`,
     ];
-    for (const input of substitutionCases) {
+    for (const input of assignmentCases) {
       expect(redactSensitiveText(input, { mode: "tools" }), input).toBe(input);
     }
+    // Opaque credentials must not take the expansion exemption: the URL-userinfo rule captures
+    // the password itself, and a password that merely begins with `$(` is literal credential
+    // material, not shell syntax, so it has to stay masked on the way to console output.
+    const urlCredential = `https://alice:${openParen}s3cr3t@api.example.test/v1`;
+    const urlOut = redactSensitiveText(urlCredential, { mode: "tools" });
+    expect(urlOut).not.toBe(urlCredential);
+    expect(urlOut).not.toContain(`${openParen}s3cr3t`);
+    expect(urlOut).toContain("api.example.test");
     const isBalanced = (value: string): boolean =>
       value.split("(").length === value.split(")").length;
     // Quoted values keep their existing hint-masking output (byte-identical to before this
