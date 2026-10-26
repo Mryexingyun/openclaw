@@ -43,7 +43,7 @@ function run(runId: string, overrides: Partial<SubagentRunRecord> = {}): Subagen
   };
 }
 
-// Main's scan is the equivalence oracle, independent of the maintained controller answer.
+// Main's public owner-scoped scan is independent of the direct bucket query.
 function scannedController(key: string, entry: SessionEntry) {
   const selected = getLatestLiveSubagentRunByChildSessionKey(
     key,
@@ -60,7 +60,12 @@ function scannedController(key: string, entry: SessionEntry) {
 test("keeps controller and native owners equivalent across generations, identities, and live transitions", () => {
   const claims = new Map<string, string>();
   const rows = Array.from({ length: 12 }, (_, index) => ({
-    key: `agent:main:subagent:child-${index % 3}`,
+    key:
+      index % 6 === 4
+        ? "global"
+        : index % 6 === 5
+          ? "agent:invalid agent:subagent:child"
+          : `agent:main:subagent:child-${index % 3}`,
     entry: {
       sessionId: `session-${index % 2}`,
       lifecycleRevision: index < 6 ? undefined : `life-${index % 2}`,
@@ -95,7 +100,7 @@ test("keeps controller and native owners equivalent across generations, identiti
         generation: random(3),
         createdAt: random(4),
         childSessionIdentity: {
-          sessionId: identity % 2 === 0 ? "" : `session-${random(2)}`,
+          sessionId: identity % 2 === 0 ? "" : `${identity === 3 ? " " : ""}session-${random(2)}`,
           lifecycleRevision: identity < 2 ? undefined : `life-${random(2)}`,
         },
         execution: operation === 2 ? { status: "terminal", endedAt: step } : { status: "running" },
@@ -160,24 +165,4 @@ test("resolves a queued controller through a replacement execution's scheduler s
     hold.withdraw();
     await hold.release();
   }
-});
-
-test("repeated row reads consume the recorded controller without examining runs", () => {
-  let executionReads = 0;
-  const execution = { status: "terminal" as const, endedAt: 2 };
-  const entry = {
-    ...run("counted"),
-    get execution() {
-      executionReads++;
-      return execution;
-    },
-  };
-  subagentRuns.set(entry.runId, entry);
-  executionReads = 0;
-  for (let read = 0; read < 100; read++) {
-    expect(
-      resolveSessionChildController(entry.childSessionKey, { sessionId: "child", updatedAt: 1 }),
-    ).toBeUndefined();
-  }
-  expect(executionReads).toBe(0);
 });

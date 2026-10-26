@@ -249,6 +249,9 @@ const resident =
     : undefined;
 const { parseAgentSessionKey } = await import("../../src/sessions/session-key-utils.js");
 const ownerRows = rows.map((row) => ({ ...row, parsedKey: parseAgentSessionKey(row.key) }));
+const requesterRoots = [
+  ...new Set(Array.from(snapshot.values(), (run) => run.requesterSessionKey)),
+];
 const lookup = memory.getSubagentSessionReadLookup(memory.subagentRuns);
 let previousTopology = lookup.captureTopology();
 let topologyChanges = 0;
@@ -257,6 +260,7 @@ let sequence = 0;
 let ownerCpuMicros = 0;
 let ownerReads = 0;
 let returnedRows = 0;
+let descendantQueries = 0;
 function updateRun() {
   const index = sequence % parentCount;
   const previous = active[index]!;
@@ -308,9 +312,10 @@ async function resolveList() {
     topologyChanges++;
   }
   previousTopology = topology;
-  for (const key of parentKeys) {
+  for (const key of requesterRoots) {
     checksum += index.countActiveDescendantRuns(key);
   }
+  descendantQueries += requesterRoots.length;
   const before = process.threadCpuUsage();
   for (const row of ownerRows) {
     checksum += resolveSessionChildOwners({ ...row, now: clock, subagentRuns: index }).length;
@@ -365,10 +370,12 @@ try {
   ownerCpuMicros = 0;
   ownerReads = 0;
   returnedRows = 0;
+  descendantQueries = 0;
   const heapBefore = process.memoryUsage().heapUsed;
   if (values.mode !== "timing") {
     inspector.connect();
   }
+  let countedDescendantQueries: number | undefined;
   if (values.mode === "census") {
     await inspector.post("Profiler.enable");
     await inspector.post("Profiler.startPreciseCoverage", { callCount: true, detailed: false });
@@ -391,7 +398,7 @@ try {
     await inspector.post("Profiler.stopPreciseCoverage");
     const calls = result
       .filter((script) =>
-        /\/(session-row-presentation|session-utils-(core|row)|subagent-(registry-(memory|read)|child-owner-match|run-generation))\.ts$/.test(
+        /\/(session-row-presentation|session-utils-(core|row)|subagent-(registry-(memory|read|queries|read-topology)|child-owner-match|run-generation))\.ts$/.test(
           script.url,
         ),
       )
@@ -403,30 +410,70 @@ try {
           callsPerList: (fn.ranges[0]?.count ?? 0) / work.lists,
         })),
       );
+    countedDescendantQueries = calls.reduce(
+      (count, fn) =>
+        count +
+        (fn.file === "subagent-registry-queries.ts" &&
+        [
+          "countActiveDescendantRuns",
+          "countPendingDescendantRuns",
+          "hasDescendantRunAwaitingSettle",
+        ].includes(fn.name)
+          ? fn.calls
+          : 0),
+      0,
+    );
     writeFileSync(path.join(root, "calls.json"), JSON.stringify(calls, null, 2));
   }
   let allocatedBytes: number | undefined;
   let childOwnerAllocatedBytes: number | undefined;
+  let controllerAllocatedBytes: number | undefined;
+  let descendantAllocatedBytes: number | undefined;
+  let controllerAndDescendantAllocatedBytes: number | undefined;
   if (values.mode === "allocation") {
     const { profile } = await inspector.post("HeapProfiler.stopSampling");
     writeFileSync(path.join(root, "allocation.heapprofile"), JSON.stringify(profile));
-    const allocation = { total: 0, childOwner: 0 };
-    const visit = (node: HeapProfiler.SamplingHeapProfileNode, childOwner = false): void => {
+    const allocation = { total: 0, childOwner: 0, controller: 0, descendant: 0, union: 0 };
+    const visit = (
+      node: HeapProfiler.SamplingHeapProfileNode,
+      childOwner = false,
+      controller = false,
+      descendant = false,
+    ): void => {
+      const name = node.callFrame.functionName;
       const owner =
         childOwner ||
-        node.callFrame.functionName === "resolveSessionChildOwners" ||
-        node.callFrame.functionName === "resolveSessionChildController";
+        name === "resolveSessionChildOwners" ||
+        name === "resolveSessionChildController";
+      controller ||=
+        name === "resolveSessionChildController" || name === "getSubagentChildControllerSessionKey";
+      descendant ||=
+        /\/subagent-registry-(queries|read-topology)\.ts$/.test(node.callFrame.url) &&
+        [
+          "countActiveDescendantRuns",
+          "countPendingDescendantRuns",
+          "hasDescendantRunAwaitingSettle",
+          "cachedDescendantCount",
+          "countDescendantRuns",
+          "getDescendantKeys",
+        ].includes(name);
       allocation.total += node.selfSize;
       if (owner) {
         allocation.childOwner += node.selfSize;
       }
+      if (controller) allocation.controller += node.selfSize;
+      if (descendant) allocation.descendant += node.selfSize;
+      if (controller || descendant) allocation.union += node.selfSize;
       for (const child of node.children) {
-        visit(child, owner);
+        visit(child, owner, controller, descendant);
       }
     };
     visit(profile.head);
     allocatedBytes = allocation.total;
     childOwnerAllocatedBytes = allocation.childOwner;
+    controllerAllocatedBytes = allocation.controller;
+    descendantAllocatedBytes = allocation.descendant;
+    controllerAndDescendantAllocatedBytes = allocation.union;
   }
   const gc: Record<string, { count: number; totalMs: number }> = {};
   for (const entry of gcEntries) {
@@ -462,11 +509,37 @@ try {
     ownerCpuMsPerList: values.workload === "owner" ? ownerCpuMicros / 1000 / work.lists : undefined,
     ownerReads,
     returnedRows,
+    requesterRoots: requesterRoots.length,
+    descendantQueries:
+      countedDescendantQueries ?? (values.workload === "owner" ? descendantQueries : undefined),
+    descendantQueriesPerList:
+      countedDescendantQueries !== undefined
+        ? countedDescendantQueries / work.lists
+        : values.workload === "owner"
+          ? descendantQueries / work.lists
+          : undefined,
+    descendantQueryCountSource:
+      countedDescendantQueries !== undefined
+        ? "precise coverage"
+        : values.workload === "owner"
+          ? "explicit owner-workload calls"
+          : undefined,
     allocatedBytes,
     allocatedBytesPerList: allocatedBytes === undefined ? undefined : allocatedBytes / work.lists,
     childOwnerAllocatedBytes,
     childOwnerAllocatedBytesPerList:
       childOwnerAllocatedBytes === undefined ? undefined : childOwnerAllocatedBytes / work.lists,
+    controllerAllocatedBytes,
+    controllerAllocatedBytesPerList:
+      controllerAllocatedBytes === undefined ? undefined : controllerAllocatedBytes / work.lists,
+    descendantAllocatedBytes,
+    descendantAllocatedBytesPerList:
+      descendantAllocatedBytes === undefined ? undefined : descendantAllocatedBytes / work.lists,
+    controllerAndDescendantAllocatedBytes,
+    controllerAndDescendantAllocatedBytesPerList:
+      controllerAndDescendantAllocatedBytes === undefined
+        ? undefined
+        : controllerAndDescendantAllocatedBytes / work.lists,
     allocatedBytesPerUpdate:
       allocatedBytes === undefined ? undefined : allocatedBytes / work.updates,
     gc,

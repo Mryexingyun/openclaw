@@ -4,7 +4,7 @@ import {
 } from "@openclaw/normalization-core/number-coercion";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import type { SessionsListParams } from "../../packages/gateway-protocol/src/index.js";
-import { subagentChildControllers } from "../agents/subagents/registry/subagent-registry-memory.js";
+import { getSubagentChildControllerSessionKey } from "../agents/subagents/registry/subagent-registry-read.js";
 import {
   RECENT_ENDED_SUBAGENT_CHILD_SESSION_MS,
   shouldKeepSubagentRunChildLink,
@@ -178,7 +178,7 @@ export function resolveSessionChildController(
   ) {
     return undefined;
   }
-  return subagentChildControllers.get(key, entry);
+  return getSubagentChildControllerSessionKey(key, entry);
 }
 
 /** Promotion cuts navigation activity, not a live controller's ownership. */

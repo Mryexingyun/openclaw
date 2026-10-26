@@ -9,7 +9,6 @@ import {
   trackAsyncWork,
 } from "../../../shared/async-work-scope.js";
 import { createDeferredCore } from "../../../shared/deferred.js";
-import { registerListener } from "../../../shared/listeners.js";
 
 type SwarmRemovalReason = "cancelled" | "shutdown";
 
@@ -82,17 +81,6 @@ function bindSwarmLaunchWork<Args extends unknown[], Result>(
 }
 
 const lanes = new Map<string, SwarmGroupLane>();
-const reservationListeners = new Set<(runId: string | undefined) => void>();
-
-export function subscribeSwarmRunReservationChanges(listener: (runId: string | undefined) => void) {
-  return registerListener(reservationListeners, listener);
-}
-
-function publishReservationChange(runId?: string) {
-  for (const listener of reservationListeners) {
-    listener(runId);
-  }
-}
 const pendingRemovals = new Set<QueuedSwarmRun>();
 // Releasing capacity does not settle an admission or its failure cleanup.
 const pendingLaunches = new Set<QueuedSwarmRun>();
@@ -302,7 +290,6 @@ export function bindSwarmRunReservation(
   if (item && item.owner === undefined) {
     item.owner = owner;
     item.onCapacityChange = onCapacityChange;
-    publishReservationChange(runId);
     notifyGatewayWorkMetricsChanged();
     publishCapacityChange(item);
   }
@@ -377,7 +364,6 @@ export function releaseSwarmRun(runId: string): boolean {
   const previouslyFull = location.lane.active.size >= location.lane.limit;
   location.lane.active.delete(runId);
   runLocations.delete(runId);
-  publishReservationChange(runId);
   notifyGatewayWorkMetricsChanged();
   publishLaneCapacityChange(location.lane, previouslyFull);
   pumpLane(location.lane);
@@ -393,7 +379,6 @@ function removeQueuedSwarmRun(runId: string): boolean {
   const index = location.lane.queue.indexOf(location.item);
   location.lane.queue.splice(index, 1);
   runLocations.delete(runId);
-  publishReservationChange(runId);
   notifyGatewayWorkMetricsChanged();
   void finalizeRemovedRun(location.item);
   publishCapacityChange(location.item);
@@ -508,7 +493,6 @@ const testing = {
     }
     lanes.clear();
     runLocations.clear();
-    publishReservationChange();
     notifyGatewayWorkMetricsChanged();
     pendingRemovals.clear();
     pendingLaunches.clear();

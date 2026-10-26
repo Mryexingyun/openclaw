@@ -17,6 +17,8 @@ import {
 } from "./subagent-run-generation.js";
 import { hasSubagentRunEnded, isRetainedUnendedSubagentRun } from "./subagent-run-liveness.js";
 
+const activeDescendantsOnly = { activeOnly: true } as const;
+
 function isDeliveryTerminalForRequesterSettle(
   entry: Pick<SubagentRunRecord, "delivery" | "pauseReason">,
 ): boolean {
@@ -298,7 +300,9 @@ export function buildSubagentRunReadIndexFromRuns<T extends SubagentRunReadRecor
     ): number => {
       const excludedRunId = options?.excludeRunId?.trim();
       let count = 0;
-      for (const childSessionKey of getDescendantKeys(rootSessionKey)) {
+      const descendants = getDescendantKeys(rootSessionKey);
+      for (let index = 0; index < descendants.length; index++) {
+        const childSessionKey = descendants[index]!;
         const entry = latestRunsByChildSessionKey.get(childSessionKey)!;
         if (entry.runId === excludedRunId) {
           continue;
@@ -337,11 +341,25 @@ export function buildSubagentRunReadIndexFromRuns<T extends SubagentRunReadRecor
       options?: { activeOnly?: boolean; excludeSuspendedDelivery?: boolean },
     ): number => {
       const root = rootSessionKey.trim();
-      if (!getDescendantKeys(root).length) {
+      const descendants = getDescendantKeys(root);
+      if (!descendants.length) {
         return 0;
       }
       if (counts.has(root)) {
         return counts.get(root) ?? 0;
+      }
+      if (options?.activeOnly) {
+        let index = 0;
+        while (
+          index < descendants.length &&
+          hasSubagentRunEnded(latestRunsByChildSessionKey.get(descendants[index]!)!)
+        ) {
+          index++;
+        }
+        // Settled topology stays inactive until a row patch creates a fresh query window.
+        if (index === descendants.length) {
+          return 0;
+        }
       }
       const count = countDescendantRuns(root, options);
       counts.set(root, count);
@@ -349,9 +367,11 @@ export function buildSubagentRunReadIndexFromRuns<T extends SubagentRunReadRecor
     };
 
     const countActiveDescendantRuns = (rootSessionKey: string) =>
-      cachedDescendantCount(rootSessionKey, activeDescendantCountBySessionKey, {
-        activeOnly: true,
-      });
+      cachedDescendantCount(
+        rootSessionKey,
+        activeDescendantCountBySessionKey,
+        activeDescendantsOnly,
+      );
     const countPendingDescendantRuns = (
       rootSessionKey: string,
       options?: { excludeSuspendedDelivery?: boolean },
