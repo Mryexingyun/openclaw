@@ -36,16 +36,16 @@ describe("cleanSchemaForGemini", () => {
   });
 
   it.each(["anyOf", "oneOf"])("simplifies %s without losing outer metadata", (keyword) => {
-    for (const [variants, expected] of [
-      [
-        [
+    for (const { variants, expected } of [
+      {
+        variants: [
           { ...string, const: "a" },
           { ...string, const: "b" },
         ],
-        { ...string, enum: ["a", "b"] },
-      ],
-      [[{ type: "null" }, { ...string, description: "inner" }], string],
-      [[string, { type: "integer" }], string],
+        expected: { ...string, enum: ["a", "b"] },
+      },
+      { variants: [{ type: "null" }, { ...string, description: "inner" }], expected: string },
+      { variants: [string, { type: "integer" }], expected: string },
     ]) {
       expect(
         cleanSchemaForGemini({ [keyword]: variants, description: "outer", title: "Choice" }),
