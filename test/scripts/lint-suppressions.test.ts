@@ -141,6 +141,9 @@ describe("production lint suppressions", () => {
         "extensions/codex/src/app-server/run-attempt-turn-request.ts|preserve-caught-error|1",
         "extensions/diffs/src/viewer-client.ts|eslint/no-underscore-dangle|1",
         "extensions/discord/src/outbound-adapter.test-harness.ts|typescript/no-unnecessary-type-parameters|1",
+        // Ranking sorts private intermediate arrays; shared page order still uses a copy.
+        "extensions/knowledge/src/memory-index.ts|unicorn/no-array-sort|7",
+        "extensions/memory-core/src/memory/hybrid.ts|unicorn/no-array-sort|2",
         "extensions/memory-core/src/memory/manager-embedding-ops.ts|unicorn/no-array-fill-with-reference-type|1",
         "extensions/nostr/src/nostr-profile-url-safety.ts|no-warning-comments|1",
         "extensions/qa-lab/src/gateway-child-setup.ts|preserve-caught-error|1",
@@ -165,6 +168,8 @@ describe("production lint suppressions", () => {
         // Node BroadcastChannel.postMessage has no target-origin parameter.
         "scripts/perf/idle-gateway-measure-preload.mjs|unicorn/require-post-message-target-origin|1",
         "scripts/perf/lease-main-thread-renewal.mjs|typescript/unbound-method|3",
+        // Keep measured fixture shapes unchanged; construction is outside the benchmark loop.
+        "scripts/perf/memory-ranking-copies.ts|oxc/no-map-spread|2",
         // The size-record probe forwards Map.set with the original map receiver.
         "scripts/perf/model-prompt-stats-measure.ts|typescript/unbound-method|1",
         // The footprint observer supplies the native MessagePort receiver through Reflect.apply.

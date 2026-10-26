@@ -25,6 +25,7 @@ suite.define(() => {
       // Backend projection is covered by chat-metadata-runtime.required-worker.test.ts.
       const models: ModelCatalogEntry[] = route === "before" ? hostModels : [model];
       const gateway = await installMockGateway(page, {
+        subscriptionInitialHistory: false,
         sessionKey,
         agentModel: "openai/worker-model",
         models,

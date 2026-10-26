@@ -166,7 +166,9 @@ suite.define(() => {
           },
         });
         await page.goto(`${suite.server.baseUrl}chat`);
-        await gateway.waitForRequest("chat.startup");
+        await gateway.waitForRequest("sessions.messages.subscribe", {
+          match: { key: "agent:main:main" },
+        });
         for (const [index, { theme, mode, accent }] of themes.entries()) {
           const id = `${theme}-${mode}-${accent ?? "theme"}`;
           await page.emulateMedia({ colorScheme: mode });

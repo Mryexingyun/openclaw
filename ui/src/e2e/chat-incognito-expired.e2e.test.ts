@@ -24,6 +24,7 @@ async function recoverIncognito(page: Page) {
     { sessionKey: expiredKey, messages: [] },
   );
   const gateway = await installMockGateway(page, {
+    subscriptionInitialHistory: false,
     sessions: [],
     sessionTranscripts: {
       [freshKey]: {

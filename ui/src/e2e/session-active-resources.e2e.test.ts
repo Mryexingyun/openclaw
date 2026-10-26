@@ -603,7 +603,7 @@ suite.define(() => {
           deferredMethods: ["sessions.move"],
         });
         await page.goto(`${suite.server.baseUrl}chat`);
-        await gateway.waitForRequest("chat.startup");
+        await gateway.waitForRequest("sessions.messages.subscribe");
         await page.getByText("Run the workspace checks headlessly.", { exact: true }).waitFor();
         await page.getByText(session.placementMove.error, { exact: true }).waitFor();
         if (process.env.OPENCLAW_CAPTURE_UI_PROOF === "1") {

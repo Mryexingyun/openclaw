@@ -254,8 +254,8 @@ suite.define(() => {
             });
             expect(
               (
-                await gateway.getRequests("chat.startup", {
-                  sessionKey: observedEntry === "boot" ? homeKey : entryKey,
+                await gateway.getRequests("sessions.messages.subscribe", {
+                  key: observedEntry === "boot" ? homeKey : entryKey,
                 })
               ).length,
             ).toBeGreaterThan(0);

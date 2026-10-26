@@ -42,7 +42,13 @@ export type ServiceWorkerObservation = {
 
 export type ObservedGatewayRequest = {
   documentOrdinal: number;
-  method: "chat.history" | "chat.send" | "chat.startup" | "connect" | "sessions.assignOwner";
+  method:
+    | "chat.history"
+    | "chat.send"
+    | "chat.startup"
+    | "connect"
+    | "sessions.assignOwner"
+    | "sessions.messages.subscribe";
   requestId: string;
 };
 
@@ -360,6 +366,7 @@ export async function installPhoneRecoveryRequestObserver(
                 id?: unknown;
                 method?: unknown;
                 type?: unknown;
+                params?: Record<string, unknown>;
               };
               if (
                 frame.type === "req" &&
@@ -368,6 +375,8 @@ export async function installPhoneRecoveryRequestObserver(
                   frame.method === "chat.history" ||
                   frame.method === "chat.send" ||
                   frame.method === "chat.startup" ||
+                  (frame.method === "sessions.messages.subscribe" &&
+                    frame.params?.initialHistory) ||
                   frame.method === "sessions.assignOwner")
               ) {
                 const existing = JSON.parse(
