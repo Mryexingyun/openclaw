@@ -5,14 +5,12 @@ import {
   chatgptModel as model,
   chatgptContext as context,
   completedResponse,
+  createJwt,
   resetChatgptTransport,
 } from "./openai-chatgpt-responses.test-helpers.js";
 
-const apiKey = `eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.${Buffer.from(
-  JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acct-1" } }),
-).toString("base64url")}.signature`;
-
-const run = () => streamOpenAICodexResponses(model, context, { apiKey, transport: "sse" }).result();
+const run = () =>
+  streamOpenAICodexResponses(model, context, { apiKey: createJwt(), transport: "sse" }).result();
 function mockResponse(body: ReadableStream<Uint8Array>, init: ResponseInit = {}) {
   const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response(body, init));
   vi.stubGlobal("fetch", fetchMock);
@@ -140,7 +138,7 @@ describe("OpenAI ChatGPT Responses resource limits", () => {
           return new Promise<void>(() => {});
         },
       },
-      // Keep the source open until the parser requests EOF so cancellation is observable.
+      // Keep cancellation observable until the parser requests EOF.
       { highWaterMark: 0 },
     );
     mockResponse(body);
@@ -153,8 +151,6 @@ describe("OpenAI ChatGPT Responses resource limits", () => {
   });
 
   it("bounds an unterminated streamed success frame without content-length", async () => {
-    // 1 MiB chunks with no frame boundary; the pending-frame bound is 16 MiB so
-    // the reader cancels well before draining the full 32 MiB body.
     const chunkBytes = 1024 * 1024;
     const { body: overflowing, state } = repeatedBody(new Uint8Array(chunkBytes));
     const fetchMock = mockResponse(overflowing, {
