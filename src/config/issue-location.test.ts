@@ -83,26 +83,19 @@ describe("resolveConfigIssueLineInRaw", () => {
 });
 
 describe("appendReceivedValueHint", () => {
-  it("keeps truncated received values on a valid UTF-16 boundary", () => {
-    const message = receivedHint(`${"x".repeat(155)}🎉tail`, "gateway.bind");
-    expect(message).toBe(`invalid input, got: "${"x".repeat(155)}...`);
-  });
-
-  it("skips sensitive paths", () => {
-    expect(receivedHint("abc123", "channels.telegram.botToken", "invalid token")).toBe(
-      "invalid token",
-    );
-  });
-
-  it("skips object values", () => {
-    expect(receivedHint({ nested: true })).toBe("invalid input");
-  });
-
   it.each([
-    [Number.NaN, "NaN"],
-    [-0, "-0"],
-  ])("renders JSON5 number %s without coercing it to null", (value, label) => {
-    expect(receivedHint(value)).toBe(`invalid input, got: ${label}`);
+    [
+      "UTF-16 truncation",
+      `${"x".repeat(155)}🎉tail`,
+      "gateway.bind",
+      `invalid input, got: "${"x".repeat(155)}...`,
+    ],
+    ["sensitive paths", "abc123", "channels.telegram.botToken", "invalid token", "invalid token"],
+    ["object values", { nested: true }, "some.path", "invalid input"],
+    ["NaN", Number.NaN, "some.path", "invalid input, got: NaN"],
+    ["negative zero", -0, "some.path", "invalid input, got: -0"],
+  ] as const)("handles %s", (_name, value, path, expected, message = "invalid input") => {
+    expect(receivedHint(value, path, message)).toBe(expected);
   });
 });
 
@@ -133,36 +126,31 @@ describe("renderConfigValidationIssueLines", () => {
     );
   });
 
-  it("omits locations and received values for included config", () => {
-    const config = { models: { providers: { openai: { api: "bad" } } } };
-    expect(
-      renderIssue(["models", "providers", "openai", "api"], {
-        message: 'Invalid input (allowed: "openai-chatgpt")',
-        raw: '{ "$include": "./models.json" }',
-        parsed: config,
-      }),
-    ).toBe('models.providers.openai.api: Invalid input (allowed: "openai-chatgpt")');
-  });
-
-  it("omits values changed by environment substitution", () => {
-    expect(
-      renderIssue(["gateway", "bind"], {
-        raw: '{ gateway: { bind: "${BIND}" } }',
-        parsed: { gateway: { bind: "${BIND}" } },
-        effective: { gateway: { bind: "lan" } },
-      }),
-    ).toBe("openclaw.json:1 — gateway.bind: Invalid input");
-  });
-
-  it("omits plugin-owned values for vendor.plugin", () => {
-    const config = {
-      plugins: { entries: { "vendor.plugin": { config: { accessCode: "private" } } } },
-    };
-    expect(
-      renderIssue(["plugins", "entries", "vendor.plugin", "config", "accessCode"], {
-        raw: JSON5.stringify(config),
-        parsed: config,
-      }),
-    ).toBe('openclaw.json:1 — plugins.entries["vendor.plugin"].config.accessCode: Invalid input');
+  it.each([
+    {
+      name: "included config",
+      path: ["models", "providers", "openai", "api"],
+      raw: '{ "$include": "./models.json" }',
+      parsed: { models: { providers: { openai: { api: "bad" } } } },
+      message: 'Invalid input (allowed: "openai-chatgpt")',
+      expected: 'models.providers.openai.api: Invalid input (allowed: "openai-chatgpt")',
+    },
+    {
+      name: "environment substitution",
+      path: ["gateway", "bind"],
+      raw: '{ gateway: { bind: "${BIND}" } }',
+      parsed: { gateway: { bind: "${BIND}" } },
+      effective: { gateway: { bind: "lan" } },
+      expected: "openclaw.json:1 — gateway.bind: Invalid input",
+    },
+    {
+      name: "plugin-owned values",
+      path: ["plugins", "entries", "vendor.plugin", "config", "accessCode"],
+      raw: '{ plugins: { entries: { "vendor.plugin": { config: { accessCode: "private" } } } } }',
+      expected:
+        'openclaw.json:1 — plugins.entries["vendor.plugin"].config.accessCode: Invalid input',
+    },
+  ])("omits received values for $name", ({ path, expected, raw, ...options }) => {
+    expect(renderIssue(path, { parsed: JSON5.parse(raw), ...options, raw })).toBe(expected);
   });
 });

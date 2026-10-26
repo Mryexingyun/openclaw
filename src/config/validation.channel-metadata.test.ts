@@ -8,16 +8,15 @@ import {
 } from "./validation.js";
 import { validatedConfig } from "./validation.test-helpers.js";
 
-const mockLoadPluginManifestRegistry = vi.hoisted(() =>
-  vi.fn((): PluginManifestRegistry => ({ diagnostics: [], plugins: [] })),
-);
+let manifestRegistry: PluginManifestRegistry;
+const metadata = () => ({ manifestRegistry });
 
 function registry(...plugins: PluginManifestRecord[]): PluginManifestRegistry {
   return { diagnostics: [], plugins };
 }
 
 function install(...plugins: Parameters<typeof plugin>[0][]) {
-  mockLoadPluginManifestRegistry.mockReturnValue(registry(...plugins.map(plugin)));
+  manifestRegistry = registry(...plugins.map(plugin));
 }
 
 const objectSchema = (
@@ -35,7 +34,10 @@ function feishuPlugin(schema: Record<string, unknown> = objectSchema({}), id = "
 }
 
 function validateFeishu(config: Record<string, unknown>) {
-  return validateConfigObjectRawWithPlugins({ channels: { feishu: config } });
+  return validateConfigObjectRawWithPlugins(
+    { channels: { feishu: config } },
+    { pluginMetadataSnapshot: metadata() },
+  );
 }
 
 function pluginDefaultsRegistry() {
@@ -52,39 +54,13 @@ function pluginDefaultsRegistry() {
 
 const enabledOpik = { plugins: { allow: ["opik"], entries: { opik: { enabled: true } } } };
 
-vi.mock("../plugins/manifest-registry.js", () => ({
-  loadPluginManifestRegistryCore: () => mockLoadPluginManifestRegistry(),
-  resolveManifestContractPluginIds: () => [],
-}));
-vi.mock("../plugins/plugin-registry.js", () => ({
-  loadPluginManifestRegistryForPluginRegistry: () => mockLoadPluginManifestRegistry(),
-}));
-vi.mock("../plugins/plugin-metadata-snapshot.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../plugins/plugin-metadata-snapshot.js")>()),
-  loadPluginMetadataSnapshot: () => ({ manifestRegistry: mockLoadPluginManifestRegistry() }),
-  resolvePluginMetadataSnapshot: () => ({ manifestRegistry: mockLoadPluginManifestRegistry() }),
-}));
-vi.mock("../plugins/doctor-contract-registry.js", () => ({
-  collectDoctorConfigRepairPluginIds: () => [],
-  collectRelevantDoctorPluginIds: () => [],
-  listPluginDoctorLegacyConfigRules: () => [],
-  applyPluginDoctorCompatibilityMigrations: () => ({ next: null, changes: [] }),
-}));
-vi.mock("../secrets/target-registry-data.js", () => ({
-  buildSecretTargetRegistryFromPlugins: () => [],
-  getCoreSecretTargetRegistry: () => [],
-  getSecretTargetRegistry: () => [],
-}));
-vi.mock("../channels/plugins/legacy-config.js", () => ({
-  collectChannelLegacyConfigRules: () => [],
-}));
 vi.mock("./zod-schema.js", () => ({
   OpenClawSchema: { safeParse: (raw: unknown) => ({ success: true, data: raw }) },
 }));
 
 beforeEach(() => {
   clearPluginMetadataLifecycleCaches();
-  mockLoadPluginManifestRegistry.mockReset().mockReturnValue(registry());
+  manifestRegistry = registry();
 });
 
 describe("config validation metadata", () => {
@@ -123,12 +99,16 @@ describe("config validation metadata", () => {
         providers: { fixture: { models: [catalogModel] } },
       },
     });
-    const result = validateConfigObjectWithPlugins(source, { pluginValidation: "skip" });
+    const loadPluginMetadataSnapshot = vi.fn(metadata);
+    const result = validateConfigObjectWithPlugins(source, {
+      pluginValidation: "skip",
+      loadPluginMetadataSnapshot,
+    });
     expect(validatedConfig(result).models?.providers?.fixture?.models).toMatchObject([
       expectedModel,
     ]);
     expect(source).toEqual(original);
-    expect(mockLoadPluginManifestRegistry).toHaveBeenCalledOnce();
+    expect(loadPluginMetadataSnapshot).toHaveBeenCalledOnce();
   });
 
   it("applies channel schema defaults even in raw mode", () => {
@@ -147,8 +127,12 @@ describe("config validation metadata", () => {
       },
     });
     expect(
-      validatedConfig(validateConfigObjectRawWithPlugins({ channels: { telegram: {} } })).channels
-        ?.telegram?.dmPolicy,
+      validatedConfig(
+        validateConfigObjectRawWithPlugins(
+          { channels: { telegram: {} } },
+          { pluginMetadataSnapshot: metadata() },
+        ),
+      ).channels?.telegram?.dmPolicy,
     ).toBe("pairing");
   });
 
@@ -176,16 +160,13 @@ describe("config validation metadata", () => {
     const loadPluginMetadataSnapshot = vi.fn(() => ({
       manifestRegistry: pluginDefaultsRegistry(),
     }));
-    if (!materialized) {
-      mockLoadPluginManifestRegistry.mockReturnValue(pluginDefaultsRegistry());
-    }
     const result = materialized
       ? validateConfigObjectWithPlugins(enabledOpik, { loadPluginMetadataSnapshot })
-      : validateConfigObjectRawWithPlugins({ plugins: { entries: { opik: { enabled: true } } } });
+      : validateConfigObjectRawWithPlugins(
+          { plugins: { entries: { opik: { enabled: true } } } },
+          { pluginMetadataSnapshot: { manifestRegistry: pluginDefaultsRegistry() } },
+        );
     expect(loadPluginMetadataSnapshot).toHaveBeenCalledTimes(Number(materialized));
-    if (materialized) {
-      expect(mockLoadPluginManifestRegistry).not.toHaveBeenCalled();
-    }
     expect(validatedConfig(result).plugins?.entries?.opik?.config).toEqual(
       materialized ? { workspace: "default-workspace" } : undefined,
     );
