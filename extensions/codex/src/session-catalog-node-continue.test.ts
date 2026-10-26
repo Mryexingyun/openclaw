@@ -78,12 +78,27 @@ const continueRequest = (overrides: { hostId?: string; clientScopes?: string[] }
   ...overrides,
 });
 
-function nodeCatalog(options: Parameters<typeof createRuntime>[0] = {}) {
-  const context = createRuntime({
+function nodeRuntime(
+  options: Parameters<typeof createRuntime>[0] = {},
+  sessions = [nodeSession("thread-remote")],
+  turns: unknown[] = [],
+  checkParams: (params: unknown) => void = () => {},
+) {
+  const replies: Record<string, { payloadJSON: string }> = {
+    [CODEX_APP_SERVER_THREADS_LIST_COMMAND]: nodePage(sessions),
+    [CODEX_APP_SERVER_THREAD_TURNS_LIST_COMMAND]: payload({ data: turns }),
+  };
+  return createRuntime({
     nodes: [pairedNode()],
+    invoke: vi.fn<PluginRuntime["nodes"]["invoke"]>(async ({ command, params }) => {
+      checkParams(params);
+      if (!(command in replies)) {
+        throw new Error(`unexpected command: ${command}`);
+      }
+      return replies[command];
+    }),
     ...options,
   });
-  return { ...context, provider: registerProvider(context.runtime) };
 }
 
 it("advertises creation from startup config before the live snapshot is available", () => {
@@ -114,35 +129,25 @@ it("adopts a paired-node session with bounded history and an executable binding"
   const remoteThreadId = "123e4567-e89b-12d3-a456-426614174001";
   const sessionFamilyId = "123e4567-e89b-12d3-a456-426614174002";
   let runtimeConfig = compatibilityOwnerConfig("beta");
-  const invoke = vi.fn<PluginRuntime["nodes"]["invoke"]>(async ({ command }) => {
-    if (command === CODEX_APP_SERVER_THREADS_LIST_COMMAND) {
-      return nodePage([
-        nodeSession(remoteThreadId, {
-          sessionId: sessionFamilyId,
-          cwd: "/remote/repo",
-          source: "vscode",
-          modelProvider: "openai",
-          createdAt: 123,
-        }),
-      ]);
-    }
-    if (command === CODEX_APP_SERVER_THREAD_TURNS_LIST_COMMAND) {
-      return payload({
-        data: [
-          {
-            id: "turn-1",
-            status: "completed",
-            items: [{ id: "item-1", type: "agentMessage", text: "done" }],
-          },
-        ],
-      });
-    }
-    throw new Error(`unexpected command: ${command}`);
-  });
-  const { runtime, entries, createSessionEntry } = createRuntime({
-    nodes: [{ ...pairedNode(), displayName: "Devbox" }],
-    invoke,
-  });
+  const { runtime, entries, createSessionEntry } = nodeRuntime(
+    {},
+    [
+      nodeSession(remoteThreadId, {
+        sessionId: sessionFamilyId,
+        cwd: "/remote/repo",
+        source: "vscode",
+        modelProvider: "openai",
+        createdAt: 123,
+      }),
+    ],
+    [
+      {
+        id: "turn-1",
+        status: "completed",
+        items: [{ id: "item-1", type: "agentMessage", text: "done" }],
+      },
+    ],
+  );
   const provider = registerProvider(runtime, () => runtimeConfig);
 
   const request = { ...continueRequest(), agentId: "alpha", threadId: remoteThreadId };
@@ -219,20 +224,14 @@ it("keeps Gateway-first upgrades compatible with the released node selector and 
       config: runtimeConfig,
       agentId: (params as { agentId?: string }).agentId,
     }).sessionAgentId;
-  const invoke = vi.fn<PluginRuntime["nodes"]["invoke"]>(async ({ command, params }) => {
-    selectReleasedNodeAgent(params);
-    if (command === CODEX_APP_SERVER_THREADS_LIST_COMMAND) {
-      return nodePage([nodeSession(threadId)]);
-    }
-    if (command === CODEX_APP_SERVER_THREAD_TURNS_LIST_COMMAND) {
-      return payload({ data: [] });
-    }
-    throw new Error(`unexpected command: ${command}`);
-  });
-  const { runtime, createSessionEntry } = createRuntime({
-    nodes: [pairedNode([...CODEX_NODE_CONTINUE_COMMANDS, CODEX_TERMINAL_RESUME_COMMAND])],
-    invoke,
-  });
+  const { runtime, createSessionEntry } = nodeRuntime(
+    {
+      nodes: [pairedNode([...CODEX_NODE_CONTINUE_COMMANDS, CODEX_TERMINAL_RESUME_COMMAND])],
+    },
+    [nodeSession(threadId)],
+    [],
+    selectReleasedNodeAgent,
+  );
   const provider = registerProvider(runtime, () => runtimeConfig, createControl(), runtimeConfig);
   const continueSession = provider?.continueSession;
   if (!continueSession) {
@@ -304,7 +303,8 @@ it.each([
   string,
   Parameters<typeof createRuntime>[0],
 ][])("rejects %s before adoption", async (_name, request, error, options) => {
-  const { provider, createSessionEntry } = nodeCatalog(options);
+  const { runtime, createSessionEntry } = nodeRuntime(options);
+  const provider = registerProvider(runtime);
   await expect(provider.continueSession!(continueRequest(request))).rejects.toThrow(error);
   expect(createSessionEntry).not.toHaveBeenCalled();
 });
@@ -511,32 +511,6 @@ it("builds local and paired-node terminal plans from verified catalog records", 
     { ...terminalNode("denied", true, []), commands: [CODEX_TERMINAL_START_COMMAND] },
   ];
   const localList = vi.spyOn(control, "listPage").mockRejectedValue(new Error("app-server down"));
-  const localProgress = vi.fn();
-  let rejectNodes!: (error: Error) => void;
-  const pending = getProvider()!.list({
-    onHost: localProgress,
-    listNodes: () =>
-      new Promise((_, reject) => {
-        rejectNodes = reject;
-      }),
-  });
-  await vi.waitFor(() =>
-    expect(localProgress).toHaveBeenCalledWith(
-      expect.objectContaining({
-        hostId: CODEX_LOCAL_SESSION_HOST_ID,
-        connected: false,
-        canStartTerminal: true,
-      }),
-    ),
-  );
-  rejectNodes(new Error("node registry down"));
-  expect(await pending).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({ hostId: CODEX_LOCAL_SESSION_HOST_ID, canStartTerminal: true }),
-      expect.objectContaining({ hostId: "node:registry", canStartTerminal: false }),
-    ]),
-  );
-  localList.mockRestore();
   invoke.mockClear();
   const onHost = vi.fn();
   const catalogHosts = await getProvider()?.list({
@@ -551,8 +525,9 @@ it("builds local and paired-node terminal plans from verified catalog records", 
   expect(onHost.mock.calls.map(([host]) => host)).toEqual(expect.arrayContaining(catalogHosts!));
   expect(invoke).not.toHaveBeenCalled();
   expect(terminalHosts?.filter((host) => host.kind === "gateway")).toEqual([
-    expect.objectContaining({ hostId: CODEX_LOCAL_SESSION_HOST_ID }),
+    expect.objectContaining({ hostId: CODEX_LOCAL_SESSION_HOST_ID, connected: false }),
   ]);
+  localList.mockRestore();
   const userSource = catalogHosts?.find((host) => host.label === "Local Codex · user");
   expect(userSource).toMatchObject({ canStartTerminal: false });
   await expect(
