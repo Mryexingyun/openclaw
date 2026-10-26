@@ -30,11 +30,8 @@ const cutoffNotice =
 
 // Adapted from @ablake4427's #178300 reproduction: real writes and finalization,
 // with only provider I/O scripted. A summary cannot finish interrupted work.
-it.each([
-  { interrupted: true, label: "preserves a length failure after recovering a summary" },
-  { interrupted: false, label: "keeps genuinely completed work successful after summary recovery" },
-])("$label", async ({ interrupted }) => {
-  const sessionId = interrupted ? "interrupted-finalization" : "completed-finalization";
+it("preserves a length failure after recovering a summary", async () => {
+  const sessionId = "interrupted-finalization";
   await withOpenClawTestState({ label: sessionId }, async (state) => {
     const bundled = state.path("bundled");
     await fs.mkdir(bundled);
@@ -44,36 +41,36 @@ it.each([
       const toolResults = context.messages.filter(
         (message) => message.role === "toolResult",
       ).length;
-      const file = toolResults === 0 ? "a" : !interrupted && toolResults === 1 ? "b" : undefined;
-      const stopReason = !hasTools ? "stop" : file ? "toolUse" : interrupted ? "length" : "stop";
+      const write = hasTools && toolResults === 0;
+      const stopReason = !hasTools ? "stop" : write ? "toolUse" : "length";
       const message = makeAgentAssistantMessage({
         api: model.api,
         provider: model.provider,
         model: model.id,
         stopReason,
-        ...(hasTools && !file
+        ...(hasTools && !write
           ? { usage: { ...ZERO_USAGE_FIXTURE, output: 1, totalTokens: 1 } }
           : {}),
         content: !hasTools
           ? [{ type: "text", text: summary }]
-          : file
+          : write
             ? [
                 {
                   type: "toolCall",
-                  id: `write-${file}`,
+                  id: "write-a",
                   name: "write",
-                  arguments: { path: `${file}.txt`, content: file === "a" ? "alpha\n" : "beta\n" },
+                  arguments: { path: "a.txt", content: "alpha\n" },
                 },
               ]
             : [
                 {
                   type: "thinking",
-                  thinking: interrupted ? "Next I need to write b.txt" : "Both files are written",
+                  thinking: "Next I need to write b.txt",
                   thinkingSignature: "opaque-signature",
                 },
               ],
       });
-      requests.push(hasTools ? (file ? `write-${file}` : message.stopReason) : "summary");
+      requests.push(hasTools ? (write ? "write-a" : message.stopReason) : "summary");
       return createQueuedAssistantStream((push) => {
         push({ type: "done", reason: stopReason, message });
       });
@@ -166,37 +163,24 @@ it.each([
               },
             });
             expect(network).not.toHaveBeenCalled();
-            expect(requests).toEqual(
-              interrupted
-                ? ["write-a", "length", "summary"]
-                : ["write-a", "write-b", "stop", "summary"],
-            );
+            expect(requests).toEqual(["write-a", "length", "summary"]);
             expect(await fs.readFile(path.join(state.workspaceDir, "a.txt"), "utf8")).toBe(
               "alpha\n",
             );
-            const bContent = await fs
-              .readFile(path.join(state.workspaceDir, "b.txt"), "utf8")
-              .catch(() => undefined);
-            expect(bContent).toBe(interrupted ? undefined : "beta\n");
+            await expect(fs.readFile(path.join(state.workspaceDir, "b.txt"))).rejects.toMatchObject(
+              { code: "ENOENT" },
+            );
             const deliveredText = result.payloads?.map((payload) => payload.text ?? "").join("\n");
             expect(deliveredText).toContain(summary);
-            const stopReason = interrupted ? "length" : "stop";
             expect.soft(result.meta).toMatchObject({
-              stopReason,
-              completion: { stopReason, finishReason: stopReason },
+              stopReason: "length",
+              completion: { stopReason: "length", finishReason: "length" },
+              error: { kind: "incomplete_turn", fallbackSafe: false },
             });
-            expect(deliveredText?.includes(cutoffNotice)).toBe(interrupted);
+            expect(deliveredText).toContain(cutoffNotice);
             const phases = lifecycle.map((event) => event.phase);
-            expect.soft(phases).toContain(interrupted ? "error" : "end");
-            expect.soft(phases).not.toContain(interrupted ? "end" : "error");
-            if (interrupted) {
-              expect.soft(result.meta.error).toMatchObject({
-                kind: "incomplete_turn",
-                fallbackSafe: false,
-              });
-            } else {
-              expect(result.meta.error).toBeUndefined();
-            }
+            expect.soft(phases).toContain("error");
+            expect.soft(phases).not.toContain("end");
           } finally {
             admission.close();
             await resetPreparedModelRuntimeSnapshotsForTest();

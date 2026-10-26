@@ -7,9 +7,12 @@ import {
 } from "../../test-helpers/embedded-agent-runner-e2e-fixtures.js";
 import { resolveCurrentAttemptAssistant } from "./attempt-terminal-evidence.js";
 import { createEmbeddedRunContextRecoveryState } from "./context-recovery-state.js";
+import { textAssistant } from "./settled-turn-fixtures.test-support.js";
 import { resolveEmbeddedRunAttemptTerminalState } from "./terminal-outcome.js";
 import { resolveEmbeddedRunTerminal } from "./terminal-resolution.js";
 import { createEmbeddedRunTerminalRetryState } from "./terminal-retry-state.js";
+
+export { textAssistant };
 
 export type TerminalInput = Parameters<typeof resolveEmbeddedRunTerminal>[0] &
   Partial<Parameters<typeof resolveEmbeddedRunTerminal>[0]["prepared"]>;
@@ -26,13 +29,6 @@ type TerminalInputOverrides = Omit<
 
 export function emptyAssistant(overrides: Parameters<typeof buildEmbeddedRunnerAssistant>[0] = {}) {
   return textAssistant("", overrides);
-}
-
-export function textAssistant(
-  text: string,
-  overrides: Parameters<typeof buildEmbeddedRunnerAssistant>[0] = {},
-) {
-  return buildEmbeddedRunnerAssistant({ content: [{ type: "text", text }], ...overrides });
 }
 
 export function assistantAttempt(

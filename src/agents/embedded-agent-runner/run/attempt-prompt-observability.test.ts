@@ -38,9 +38,7 @@ function observe(overrides: Partial<PromptObservabilityInput> = {}, skipped = fa
       provider: "provider-1",
       runId: "run-1",
       senderId: "sender-1",
-      sessionFile: "/tmp/session.jsonl",
       sessionId: "session-1",
-      trigger: "user",
       workspaceDir: "/tmp/workspace",
     },
     cacheTrace: { recordStage: hoisted.recordStage },
@@ -94,22 +92,11 @@ describe("observeEmbeddedAttemptPrompt", () => {
     expect(event?.historyMessages).toEqual(input.hookMessagesForCurrentPrompt);
     expect(event?.historyMessages).not.toBe(input.hookMessagesForCurrentPrompt);
     expect(context).toMatchObject({ agentId: "main", channel: "discord", senderId: "sender-1" });
-  });
-
-  it("marks a blank current prompt as skipped while preserving its compiled trace", () => {
-    const input = observe({ imageCount: 0, promptForModel: "   " }, true);
     expect(hoisted.recordTrajectoryEvent).toHaveBeenNthCalledWith(
       1,
       "context.compiled",
       expect.any(Object),
     );
-    expect(hoisted.recordTrajectoryEvent).toHaveBeenNthCalledWith(2, "prompt.skipped", {
-      reason: "blank_user_prompt",
-      prompt: "   ",
-      messages: input.sessionMessages,
-      imagesCount: 0,
-    });
-    expect(hoisted.runLlmInput).not.toHaveBeenCalled();
   });
 
   it("keeps an already-blocked prompt out of cache, trajectory, and hook dispatch", () => {

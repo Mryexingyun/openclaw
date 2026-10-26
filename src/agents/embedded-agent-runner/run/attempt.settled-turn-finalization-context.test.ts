@@ -94,16 +94,13 @@ describe("settled post-tool turn finalization context", () => {
     const userMessages = manager
       .buildSessionContext()
       .messages.filter((message) => message.role === "user");
-    expect(userMessages).toHaveLength(3);
-    expect(userMessages[0]?.content).toBe("hello");
+    const internalPrompt = {
+      content: expect.stringContaining("Your turn ended without a final reply."),
+      display: false,
+      provenance: { kind: "internal_system" },
+    };
+    expect(userMessages).toMatchObject([{ content: "hello" }, internalPrompt, internalPrompt]);
     expect(userMessages[0]).not.toHaveProperty("display", false);
-    for (const message of userMessages.slice(1)) {
-      expect(message).toMatchObject({
-        content: expect.stringContaining("Your turn ended without a final reply."),
-        display: false,
-        provenance: { kind: "internal_system" },
-      });
-    }
     const genuineUser = { role: "user" as const, content: "Read the next file", timestamp: 5 };
     manager.appendMessage(genuineUser);
     expect(manager.buildSessionContext().messages).toContainEqual(
