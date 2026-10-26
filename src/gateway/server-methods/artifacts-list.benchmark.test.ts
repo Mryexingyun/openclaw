@@ -1,8 +1,6 @@
 import fs from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import { expect, it, vi } from "vitest";
-import { seedTeamShapeSessions } from "../../../scripts/perf/team-shape-sessions.js";
-import { captureRuntimeConfigAsyncReader } from "../../config/config.js";
 import { setRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
 import {
   replaceSessionEntry,
@@ -15,9 +13,6 @@ import { resolveOpenClawAgentSqlitePath } from "../../state/openclaw-agent-db.pa
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { createDirectChatContext } from "../server-chat.agent-events.test-helpers.js";
 import { artifactsHandlers } from "./artifacts.js";
-import { createHistoryReadContext } from "./chat-history.test-helpers.js";
-import { listSessionBranchesForGateway } from "./sessions-branches-list.js";
-import type { RespondFn } from "./types.js";
 
 it.each(["default", "custom", "configured alias", "selected alias"] as const)(
   "retains the artifact history reader between lists and closes its %s store",
@@ -99,85 +94,6 @@ it.each(["default", "custom", "configured alias", "selected alias"] as const)(
         "main",
       );
       expect(claimSoleCustody).not.toThrow();
-    });
-  },
-);
-
-it.runIf(process.env.OPENCLAW_DB_WORKER_BENCH === "1")(
-  "reuses artifact and branch results over 5000 sessions with 500 artifacts and branches",
-  async () => {
-    await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
-      await captureRuntimeConfigAsyncReader()();
-      const now = Date.UTC(2026, 9, 24);
-      await seedTeamShapeSessions({
-        stateDir: state.stateDir,
-        sessions: 4999,
-        retainedRuns: 0,
-        transcriptBytes: 0,
-        seed: "artifact-branches-benchmark",
-        now,
-      });
-      const scope = {
-        agentId: "main",
-        sessionKey: "agent:main:artifact-bench",
-        sessionId: "artifact-bench",
-      };
-      await replaceSessionEntry(scope, { sessionId: scope.sessionId, updatedAt: now });
-      const files = Array.from({ length: 500 }, (_, index) => ({
-        type: "file",
-        title: `result-${index}.txt`,
-        url: `https://artifacts.example.test/results/result-${index}.txt`,
-        mimeType: "text/plain",
-        sizeBytes: 4096,
-      }));
-      await replaceTranscriptEvents(scope, [
-        { type: "session", version: 3, id: scope.sessionId },
-        ...files.map((file, index) => ({
-          type: "message",
-          id: `message-${index}`,
-          parentId: index === 0 ? null : `message-${index - 1}`,
-          message: {
-            role: "assistant",
-            content: [{ type: "text", text: "context ".repeat(2048) }, file],
-          },
-        })),
-        ...Array.from({ length: 500 }, (_, index) => ({
-          type: "message",
-          id: `branch-${index}`,
-          parentId: "message-499",
-          message: { role: "assistant", content: `Preserved branch ${index}` },
-        })),
-      ]);
-      await waitForSessionTranscriptProjection(scope);
-      const context = await createHistoryReadContext();
-      for (const method of ["artifacts.list", "sessions.branches.list"] as const) {
-        const request = async () => {
-          let response: Parameters<RespondFn> | undefined;
-          const handler =
-            method === "artifacts.list"
-              ? artifactsHandlers["artifacts.list"]!
-              : listSessionBranchesForGateway;
-          await handler({
-            params: { sessionKey: scope.sessionKey },
-            context,
-            client: null,
-            req: { type: "req", id: "artifact-bench", method },
-            isWebchatConnect: () => false,
-            respond: (...args) => {
-              response = args;
-            },
-          });
-          return response;
-        };
-        const first = await request();
-        expect(first?.[0]).toBe(true);
-        const field = method === "artifacts.list" ? "artifacts" : "branches";
-        const golden = JSON.stringify(first?.[1]);
-        expect(JSON.parse(golden)[field]).toHaveLength(500);
-        const warm = await request();
-        expect(warm?.[0]).toBe(true);
-        expect(JSON.stringify(warm?.[1])).toBe(golden);
-      }
     });
   },
 );

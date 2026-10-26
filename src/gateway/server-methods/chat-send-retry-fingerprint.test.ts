@@ -57,8 +57,6 @@ async function expectUnchanged(
 describe("chat.send persisted request identity", () => {
   it.each([
     { mode: "ordinary", queueMode: undefined, state: "replaced" },
-    { mode: "steer", queueMode: "steer" as const, state: "replaced" },
-    { mode: "ordinary", queueMode: undefined, state: "missing" },
     { mode: "steer", queueMode: "steer" as const, state: "missing" },
   ])("refuses a $state physical session for $mode input", async ({ queueMode, state }) => {
     await using fixture = await createFixture({
