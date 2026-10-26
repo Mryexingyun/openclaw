@@ -10,10 +10,10 @@ import {
   createDeferred,
   withinTest,
 } from "../../../../test/helpers/promise.js";
-import type { Model } from "../../../llm/types.js";
 import { reserveTestPortListener } from "../../../test-utils/port-claims.js";
 import "../../../llm/ai-transport-host.js";
 import type { StreamFn } from "../../runtime/index.js";
+import { completionModel } from "../../simple-completion.test-support.js";
 import { streamWithIdleTimeout } from "./llm-idle-timeout.js";
 
 // Real HTTP, fetch, SDK parsing, reducer and watchdog; only the
@@ -32,6 +32,7 @@ describe("Responses watchdog through the loopback transport", () => {
     let injected = 0;
     let exercising = false;
     const responseReady = createDeferred<ServerResponse>();
+    const reasoning = { id: "rs_synthetic", type: "reasoning", summary: [] };
     const send = (response: ServerResponse, frame: object) => {
       response.write(`data: ${JSON.stringify(frame)}\n\n`);
     };
@@ -42,7 +43,7 @@ describe("Responses watchdog through the loopback transport", () => {
           id: "resp_synthetic",
           status: "completed",
           output: [
-            ...(includeReasoning ? [{ id: "rs_synthetic", type: "reasoning", summary: [] }] : []),
+            ...(includeReasoning ? [reasoning] : []),
             {
               id: "msg_synthetic",
               type: "message",
@@ -60,19 +61,14 @@ describe("Responses watchdog through the loopback transport", () => {
       request.on("end", () => {
         response.writeHead(200, { "content-type": "text/event-stream" });
         send(response, { type: "response.created", response: { id: "resp_synthetic" } });
-        if (!exercising) {
-          complete(response);
-          return;
-        }
-        requests += 1;
-        if (requests > 1) {
+        if (!exercising || ++requests > 1) {
           complete(response);
           return;
         }
         send(response, {
           type: "response.output_item.added",
           output_index: 0,
-          item: { id: "rs_synthetic", type: "reasoning", summary: [] },
+          item: reasoning,
         });
         responseReady.resolve(response);
       });
@@ -99,18 +95,15 @@ describe("Responses watchdog through the loopback transport", () => {
       }
     };
     bodyChunks.subscribe(onBodyChunk);
-    const model: Model = {
+    const model = completionModel({
       id: "synthetic-responses",
       name: "Synthetic Responses",
       api: "openai-responses",
       provider: "openai",
       baseUrl: `${origin}/v1`,
       reasoning: true,
-      input: ["text"],
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      contextWindow: 8192,
       maxTokens: 256,
-    };
+    });
     const runAbort = new AbortController();
     const base = createOpenAIResponsesTransportStreamFn();
     const onTimeout = vi.fn();
@@ -135,16 +128,16 @@ describe("Responses watchdog through the loopback transport", () => {
     };
     let settleStream: (() => Promise<void>) | undefined;
     let phase = "provider warmup";
+    const within = <T>(promise: Promise<T>) => withinTest(promise, signal);
     try {
       // Qualify lazy provider startup separately: this proof measures an
       // accepted response's progress deadline, not cold module preparation.
-      const warmup = await withinTest(
+      const warmup = await within(
         Promise.resolve(
           base(model, { messages: [] }, { apiKey: "synthetic-test-key", signal: runAbort.signal }),
         ),
-        signal,
       );
-      expect((await withinTest(warmup.result(), signal)).stopReason).toBe("stop");
+      expect((await within(warmup.result())).stopReason).toBe("stop");
       exercising = true;
       vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
       phase = "stream admission";
@@ -160,9 +153,8 @@ describe("Responses watchdog through the loopback transport", () => {
         if (received.includes(marker)) {
           gate.resolve();
         }
-        await withinTest(
+        await within(
           awaitGateBeforeSettlement(gate.promise, consuming, "stream settled before body receipt"),
-          signal,
         );
         // Body receipt precedes reducer processing; drain real I/O and its
         // cooperative yield before advancing the controlled watchdog clock.
@@ -170,9 +162,8 @@ describe("Responses watchdog through the loopback transport", () => {
         await setImmediate();
         await vi.advanceTimersByTimeAsync(0);
       };
-      const response = await withinTest(
+      const response = await within(
         awaitGateBeforeSettlement(responseReady.promise, consuming, "stream settled before HTTP"),
-        signal,
       );
       await waitForReceipt('"output_index":0');
       if (activity === "repeated snapshot") {
@@ -181,7 +172,7 @@ describe("Responses watchdog through the loopback transport", () => {
         send(response, {
           type: "response.output_item.done",
           output_index: 0,
-          item: { id: "rs_synthetic", type: "reasoning", summary: [] },
+          item: reasoning,
           sequence_number: 0,
         });
         await waitForReceipt('"sequence_number":0}');
@@ -204,7 +195,7 @@ describe("Responses watchdog through the loopback transport", () => {
             ? {
                 type: "response.output_item.done",
                 output_index: 0,
-                item: { id: "rs_synthetic", type: "reasoning", summary: [] },
+                item: reasoning,
               }
             : {
                 type: "response.reasoning_text.delta",
@@ -223,7 +214,7 @@ describe("Responses watchdog through the loopback transport", () => {
         expect(onTimeout).not.toHaveBeenCalled();
         await vi.advanceTimersByTimeAsync(1);
         expect(onTimeout).toHaveBeenCalledOnce();
-        await expect(withinTest(consuming, signal)).rejects.toThrow(
+        await expect(within(consuming)).rejects.toThrow(
           activity === "network silence" ? /no response from model/ : /no model progress/,
         );
         expect(response.writableEnded).toBe(false);
@@ -235,11 +226,11 @@ describe("Responses watchdog through the loopback transport", () => {
       if (completes) {
         phase = "productive response completion";
         complete(response, true);
-        expect((await withinTest(consuming, signal)).stopReason).toBe("stop");
+        expect((await within(consuming)).stopReason).toBe("stop");
         expect(onTimeout).not.toHaveBeenCalled();
       }
       phase = "recovery response completion";
-      expect((await withinTest(consume(), signal)).content).toContainEqual(
+      expect((await within(consume())).content).toContainEqual(
         expect.objectContaining({ type: "text", text: "RECOVERED" }),
       );
       expect(requests).toBe(2);

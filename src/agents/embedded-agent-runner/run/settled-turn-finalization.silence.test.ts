@@ -72,8 +72,7 @@ describe("prepareTerminalWithSettledTurnFinalization canonical silence", () => {
 
   it.each([
     ["required", "missing", "phased"],
-    ["required", "pending-during-recovery", "plain"],
-    ["required", "unknown-during-recovery", "plain"],
+    ["required", "missing", "plain"],
     ["required", "missing", "mirror"],
     ["required", "missing", "preceding"],
     ["required", "unknown", "plain"],

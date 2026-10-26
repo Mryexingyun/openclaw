@@ -1,46 +1,29 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { makeTextToolResult } from "../../../../test/helpers/text-tool-result.js";
 import { prepareSystemAgentRunAdmission } from "../../admitted-run-context.js";
 import { createOpenClawAgentHarness } from "../../harness/builtin-openclaw.js";
 import { SessionManager } from "../../sessions/session-manager.js";
-import { buildEmbeddedRunnerAssistant } from "../../test-helpers/embedded-agent-runner-e2e-fixtures.js";
+import { useContextEngineAttemptHarness } from "./attempt-context-engine.test-support.js";
 import { createSubscriptionMock } from "./attempt-spawn-workspace.subscription-mock.test-support.js";
-import {
-  cleanupTempPaths,
-  createContextEngineAttemptRunner,
-  createContextEngineBootstrapAndAssemble,
-  getHoisted,
-  preloadRunEmbeddedAttemptForTests,
-  resetEmbeddedAttemptHarness,
-} from "./attempt-spawn-workspace.test-support.js";
 import { prepareTerminalWithSettledTurnFinalization } from "./settled-turn-finalization.js";
 import { createSettledFinalizationTestInput } from "./settled-turn-finalization.test-support.js";
+import { textAssistant, toolAssistant } from "./settled-turn-fixtures.test-support.js";
 import type { EmbeddedRunAttemptParams } from "./types.js";
 
 const finalizationRunner = vi.hoisted(() => vi.fn());
 vi.mock("./attempt.js", () => ({ runEmbeddedAttempt: finalizationRunner }));
 
-const tempPaths: string[] = [];
-beforeAll(preloadRunEmbeddedAttemptForTests);
-beforeEach(() => resetEmbeddedAttemptHarness());
-afterEach(async () => {
-  await cleanupTempPaths(tempPaths);
-  tempPaths.length = 0;
-});
+const sessionKey = "agent:main:subagent:detached-finalization";
+const { hoisted, runAttempt } = useContextEngineAttemptHarness(sessionKey);
 
 describe("settled post-tool turn finalization context", () => {
   it("keeps detached tool receipts and hidden prompts across empty finalization retries", async () => {
     const { guardSessionManager } = await vi.importActual<
       typeof import("../../session-tool-result-guard-wrapper.js")
     >("../../session-tool-result-guard-wrapper.js");
-    const hoisted = getHoisted();
     hoisted.guardSessionManagerMock.mockImplementation(guardSessionManager);
     const manager = SessionManager.inMemory();
-    const sessionKey = "agent:main:subagent:detached-finalization";
-    const toolAssistant = buildEmbeddedRunnerAssistant({
-      stopReason: "toolUse",
-      content: [{ type: "toolCall", id: "call-read", name: "read", arguments: {} }],
-    });
+    const call = toolAssistant(["call-read", "read"]);
     const toolResult = makeTextToolResult(
       "call-read",
       "read",
@@ -56,18 +39,15 @@ describe("settled post-tool turn finalization context", () => {
       activeCount: 0,
     });
     hoisted.subscribeEmbeddedAgentSessionMock.mockReturnValue(subscription);
-    const settled = await createContextEngineAttemptRunner({
-      contextEngine: createContextEngineBootstrapAndAssemble(),
-      sessionKey,
-      tempPaths,
+    const settled = await runAttempt({
       sessionMessages: [],
       attemptOverrides: { sessionManager: manager, sessionPersistence: "detached" },
       sessionPrompt: async (session, prompt) => {
         const user = { role: "user" as const, content: prompt, timestamp: 1 };
-        session.sessionManager!.appendMessage(user);
-        session.sessionManager!.appendMessage(toolAssistant);
-        session.sessionManager!.appendMessage(toolResult);
-        session.messages = [...session.messages, user, toolAssistant, toolResult];
+        for (const message of [user, call, toolResult]) {
+          session.sessionManager!.appendMessage(message);
+        }
+        session.messages = [...session.messages, user, call, toolResult];
         subscription.toolMetas.push({ toolCallId: "call-read", toolName: "read", isError: false });
         toolCompleted = true;
         throw new Error("terminated");
@@ -82,14 +62,11 @@ describe("settled post-tool turn finalization context", () => {
 
     const finalizerContexts: unknown[][] = [];
     finalizationRunner.mockImplementation(async (attempt: EmbeddedRunAttemptParams) => {
-      let finalAssistant: ReturnType<typeof buildEmbeddedRunnerAssistant> | undefined;
+      let finalAssistant: ReturnType<typeof textAssistant> | undefined;
       const finalSubscription = createSubscriptionMock();
       finalSubscription.getCurrentAttemptAssistant = () => finalAssistant;
       hoisted.subscribeEmbeddedAgentSessionMock.mockReturnValue(finalSubscription);
-      return createContextEngineAttemptRunner({
-        contextEngine: createContextEngineBootstrapAndAssemble(),
-        sessionKey,
-        tempPaths,
+      return runAttempt({
         attemptOverrides: Object.fromEntries(
           Object.entries(attempt).filter(([, value]) => value !== undefined),
         ),
@@ -98,10 +75,9 @@ describe("settled post-tool turn finalization context", () => {
         sessionPrompt: async (session, prompt) => {
           finalizerContexts.push([...session.messages]);
           session.sessionManager!.appendMessage({ role: "user", content: prompt, timestamp: 4 });
-          const assistant = buildEmbeddedRunnerAssistant({
-            content:
-              finalizerContexts.length === 1 ? [] : [{ type: "text", text: "Read completed." }],
-          });
+          const assistant = textAssistant(
+            finalizerContexts.length === 1 ? undefined : "Read completed.",
+          );
           finalAssistant = assistant;
           session.sessionManager!.appendMessage(assistant);
           session.messages = [...session.messages, assistant];
@@ -160,19 +136,12 @@ describe("settled post-tool turn finalization context", () => {
     { message: "terminated", captures: true },
     { message: "the request was terminated by the server", captures: false },
   ])("captures a final provider failure '$message'=$captures", async ({ message, captures }) => {
-    const result = await createContextEngineAttemptRunner({
-      contextEngine: createContextEngineBootstrapAndAssemble(),
+    const result = await runAttempt({
       sessionKey: "agent:main:telegram:direct:settled",
-      tempPaths,
       sessionPrompt: async (session) => {
         session.messages = [
           ...session.messages,
-          {
-            role: "assistant",
-            stopReason: "toolUse",
-            timestamp: 2,
-            content: [{ type: "toolCall", id: "call-read", name: "read", arguments: {} }],
-          },
+          { ...toolAssistant(["call-read", "read"]), timestamp: 2 },
           makeTextToolResult("call-read", "read", "file contents", false, 3),
         ];
         throw new Error(message);

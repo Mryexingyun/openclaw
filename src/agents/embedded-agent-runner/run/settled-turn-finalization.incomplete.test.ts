@@ -45,46 +45,37 @@ it.each([
         (message) => message.role === "toolResult",
       ).length;
       const file = toolResults === 0 ? "a" : !interrupted && toolResults === 1 ? "b" : undefined;
+      const stopReason = !hasTools ? "stop" : file ? "toolUse" : interrupted ? "length" : "stop";
       const message = makeAgentAssistantMessage({
         api: model.api,
         provider: model.provider,
         model: model.id,
-        ...(hasTools && file
-          ? {
-              stopReason: "toolUse",
-              content: [
+        stopReason,
+        ...(hasTools && !file
+          ? { usage: { ...ZERO_USAGE_FIXTURE, output: 1, totalTokens: 1 } }
+          : {}),
+        content: !hasTools
+          ? [{ type: "text", text: summary }]
+          : file
+            ? [
                 {
                   type: "toolCall",
                   id: `write-${file}`,
                   name: "write",
-                  arguments: {
-                    path: `${file}.txt`,
-                    content: file === "a" ? "alpha\n" : "beta\n",
-                  },
+                  arguments: { path: `${file}.txt`, content: file === "a" ? "alpha\n" : "beta\n" },
+                },
+              ]
+            : [
+                {
+                  type: "thinking",
+                  thinking: interrupted ? "Next I need to write b.txt" : "Both files are written",
+                  thinkingSignature: "opaque-signature",
                 },
               ],
-            }
-          : hasTools
-            ? {
-                stopReason: interrupted ? "length" : "stop",
-                usage: { ...ZERO_USAGE_FIXTURE, output: 1, totalTokens: 1 },
-                content: [
-                  {
-                    type: "thinking",
-                    thinking: interrupted ? "Next I need to write b.txt" : "Both files are written",
-                    thinkingSignature: "opaque-signature",
-                  },
-                ],
-              }
-            : { stopReason: "stop", content: [{ type: "text", text: summary }] }),
       });
       requests.push(hasTools ? (file ? `write-${file}` : message.stopReason) : "summary");
       return createQueuedAssistantStream((push) => {
-        push({
-          type: "done",
-          reason: message.stopReason as "stop" | "length" | "toolUse",
-          message,
-        });
+        push({ type: "done", reason: stopReason, message });
       });
     };
     const bridgeKey = `__finalization_fixture_${path.basename(state.root)}`;
@@ -189,27 +180,22 @@ it.each([
             expect(bContent).toBe(interrupted ? undefined : "beta\n");
             const deliveredText = result.payloads?.map((payload) => payload.text ?? "").join("\n");
             expect(deliveredText).toContain(summary);
+            const stopReason = interrupted ? "length" : "stop";
+            expect.soft(result.meta).toMatchObject({
+              stopReason,
+              completion: { stopReason, finishReason: stopReason },
+            });
             if (interrupted) {
               expect(deliveredText).toContain(cutoffNotice);
               expect.soft(result.meta.error).toMatchObject({
                 kind: "incomplete_turn",
                 fallbackSafe: false,
               });
-              expect.soft(result.meta.stopReason).toBe("length");
-              expect.soft(result.meta.completion).toMatchObject({
-                stopReason: "length",
-                finishReason: "length",
-              });
               expect.soft(lifecycle.filter((event) => event.phase === "end")).toEqual([]);
               expect.soft(lifecycle).toContainEqual(expect.objectContaining({ phase: "error" }));
             } else {
               expect(deliveredText).not.toContain(cutoffNotice);
               expect(result.meta.error).toBeUndefined();
-              expect(result.meta.stopReason).toBe("stop");
-              expect(result.meta.completion).toMatchObject({
-                stopReason: "stop",
-                finishReason: "stop",
-              });
               expect(lifecycle.filter((event) => event.phase === "error")).toEqual([]);
               expect(lifecycle).toContainEqual(expect.objectContaining({ phase: "end" }));
             }
