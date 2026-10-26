@@ -1,4 +1,3 @@
-/** Tests external CLI scoping during agent auth-profile credential discovery. */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 
@@ -52,31 +51,31 @@ import {
 } from "./agent-auth-discovery.js";
 import { externalCliDiscoveryForProviders } from "./auth-profiles/external-cli-discovery.js";
 
+const emptyLookup = {
+  aliasMap: {},
+  envCandidateMap: {},
+  authEvidenceMap: {},
+  setupProviderFallbackRefs: [],
+};
+const discover = (options: Parameters<typeof resolveAgentDiscoveryAuthFacts>[1]) =>
+  resolveAgentDiscoveryAuthFacts("/tmp/openclaw-agent", { env: {}, ...options });
+
 describe("resolveAgentDiscoveryAuthFacts external CLI scoping", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     credentialMocks.resolveAgentCredentialMapFromStore.mockReturnValue({});
-    envAuthMocks.lookup.mockReturnValue({
-      aliasMap: {},
-      envCandidateMap: {},
-      authEvidenceMap: {},
-      setupProviderFallbackRefs: [],
-    });
+    envAuthMocks.lookup.mockReturnValue(emptyLookup);
     envAuthMocks.resolveEnvApiKey.mockReset();
   });
 
   it("threads scoped external CLI discovery into writable auth store loading", async () => {
-    const cfg = {} as OpenClawConfig;
+    const cfg: OpenClawConfig = {};
     const externalCli = externalCliDiscoveryForProviders({
       cfg,
       providers: ["fireworks"],
     });
 
-    await resolveAgentDiscoveryAuthFacts("/tmp/openclaw-agent", {
-      config: cfg,
-      env: {},
-      externalCli,
-    });
+    await discover({ config: cfg, externalCli });
 
     expect(storeMocks.ensureAuthProfileStoreAsync).toHaveBeenCalledWith("/tmp/openclaw-agent", {
       allowKeychainPrompt: false,
@@ -90,12 +89,11 @@ describe("resolveAgentDiscoveryAuthFacts external CLI scoping", () => {
       fireworks: { type: "api_key", key: "agent-key" },
     });
 
-    const { credentials } = await resolveAgentDiscoveryAuthFacts("/tmp/openclaw-agent", {
+    const { credentials } = await discover({
       ambientCredentials: {
         fireworks: { type: "api_key", key: "ambient-key" },
         "claude-cli": { type: "api_key", key: "synthetic-key" },
       },
-      env: {},
       readOnly: true,
     });
 
@@ -109,17 +107,14 @@ describe("resolveAgentDiscoveryAuthFacts external CLI scoping", () => {
   });
 
   it("can skip runtime external auth overlays and scope synthetic auth discovery", async () => {
-    await resolveAgentDiscoveryAuthFacts("/tmp/openclaw-agent", {
-      env: {},
+    await discover({
       skipExternalAuthProfiles: true,
       syntheticAuthProviderRefs: ["fireworks"],
     });
 
     expect(storeMocks.ensureAuthProfileStoreWithoutExternalProfilesAsync).toHaveBeenCalledWith(
       "/tmp/openclaw-agent",
-      {
-        allowKeychainPrompt: false,
-      },
+      { allowKeychainPrompt: false },
     );
     expect(storeMocks.ensureAuthProfileStoreAsync).not.toHaveBeenCalled();
     expect(syntheticAuthMocks.resolveRuntimeSyntheticAuthProviderRefs).not.toHaveBeenCalled();
@@ -140,10 +135,8 @@ describe("resolveAgentDiscoveryAuthFacts external CLI scoping", () => {
     "keeps authoritative native auth separate from provider aliases during %s",
     async (mode) => {
       envAuthMocks.lookup.mockReturnValueOnce({
-        aliasMap: {},
+        ...emptyLookup,
         envCandidateMap: { "claude-cli": ["ANTHROPIC_API_KEY"] },
-        authEvidenceMap: {},
-        setupProviderFallbackRefs: [],
       });
       envAuthMocks.resolveEnvApiKey.mockReturnValueOnce({
         apiKey: "provider-key",
@@ -183,9 +176,8 @@ describe("resolveAgentDiscoveryAuthFacts external CLI scoping", () => {
         },
       } satisfies OpenClawConfig;
 
-      const { credentials } = await resolveAgentDiscoveryAuthFacts("/tmp/openclaw-agent", {
+      const { credentials } = await discover({
         config: cfg,
-        env: {},
         syntheticAuthProviderRefs: ["fireworks"],
       });
 

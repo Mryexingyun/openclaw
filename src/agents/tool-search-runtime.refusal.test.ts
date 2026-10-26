@@ -25,47 +25,36 @@ const listing = Type.Object(
   { records: Type.Array(Type.String()) },
   { additionalProperties: false },
 );
+const refusalResult = { details: { gated: true }, content: [{ type: "text", text: reason }] };
+const schemas = {
+  strict: listing,
+  variants: defineToolOutputSchema({
+    inputProperty: "operation",
+    variants: { list: listing, remove: Type.Object({ removed: Type.Boolean() }) },
+  }),
+};
 
 function fixture(schema: "strict" | "variants" | "none" = "strict") {
-  const execute = vi.fn(async () => jsonResult({ records: ["R-1"] }));
-  const prepareArguments = vi.fn((input: unknown) => input);
-  const prepareBeforeToolCallParams = vi.fn((input: unknown) => input);
-  const finalizeBeforeToolCallParams = vi.fn((input: unknown) => input);
+  const hooks = {
+    execute: vi.fn(async () => jsonResult({ records: ["R-1"] })),
+    prepareArguments: vi.fn((input: unknown) => input),
+    prepareBeforeToolCallParams: vi.fn((input: unknown) => input),
+    finalizeBeforeToolCallParams: vi.fn((input: unknown) => input),
+  };
   const source: AnyAgentTool = {
     name: "records",
     label: "Records",
     description: "List records",
     parameters: Type.Object({ operation: Type.String() }),
-    ...(schema === "none"
-      ? {}
-      : {
-          outputSchema:
-            schema === "strict"
-              ? listing
-              : defineToolOutputSchema({
-                  inputProperty: "operation",
-                  variants: {
-                    list: listing,
-                    remove: Type.Object({ removed: Type.Boolean() }),
-                  },
-                }),
-        }),
-    execute,
-    prepareArguments,
-    prepareBeforeToolCallParams,
-    finalizeBeforeToolCallParams,
+    ...(schema === "none" ? {} : { outputSchema: schemas[schema] }),
+    ...hooks,
     resultContentSource: "network",
   };
   return {
     source,
     gated: gateAgentToolExecution(source, reason),
     expectNoSourceWork() {
-      for (const work of [
-        execute,
-        prepareArguments,
-        prepareBeforeToolCallParams,
-        finalizeBeforeToolCallParams,
-      ]) {
+      for (const work of Object.values(hooks)) {
         expect(work).not.toHaveBeenCalled();
       }
     },
@@ -85,9 +74,7 @@ function runtimeFor(tool: AnyAgentTool) {
   });
 }
 
-afterEach(async () => {
-  await resetCodeModeTestState();
-});
+afterEach(resetCodeModeTestState);
 
 it.each(["strict", "variants", "none"] as const)(
   "delivers gated guidance through the Code Mode catalog with %s output",
@@ -112,9 +99,7 @@ it.each(["call", "callExactId", "callValue", "callExactValue"] as const)(
     const options = { parentToolCallId: "cell" };
     if (method === "call" || method === "callExactId") {
       const envelope = await runtime[method](id, input, options);
-      expect(envelope).toMatchObject({
-        result: { details: { gated: true }, content: [{ type: "text", text: reason }] },
-      });
+      expect(envelope.result).toMatchObject(refusalResult);
       expect(readToolEffectReceipt(envelope.result)).toEqual({ state: "not_started" });
     } else {
       await expect(runtime[method](id, input, options)).resolves.toEqual(refusalValue);
@@ -127,13 +112,8 @@ it.each(["call", "callExactId", "callValue", "callExactValue"] as const)(
 
 it("keeps direct refusals non-error and explicitly not started", async () => {
   const f = fixture();
-  const result = await f.gated.execute("direct-refusal", {
-    operation: "list",
-  });
-  expect(result).toMatchObject({
-    details: { gated: true },
-    content: [{ type: "text", text: reason }],
-  });
+  const result = await f.gated.execute("direct-refusal", { operation: "list" });
+  expect(result).toMatchObject(refusalResult);
   expect(isToolResultError(result)).toBe(false);
   expect(readToolEffectReceipt(result)).toEqual({ state: "not_started" });
   expect(

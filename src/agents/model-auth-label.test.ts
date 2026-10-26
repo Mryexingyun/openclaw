@@ -69,30 +69,24 @@ describe("resolveModelAuthLabelAsync", () => {
     mocks.readCodexCliCredentialsCached.mockReturnValue(null);
   });
 
-  it("does not include token value in label for token profiles", async () => {
-    profileLabel("github-copilot:default", {
-      type: "token",
-      provider: "github-copilot",
-      token: "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", // pragma: allowlist secret
-      tokenRef: { source: "env", provider: "default", id: "GITHUB_TOKEN" },
-    });
-    const label = await labelFor("github-copilot", {
-      sessionEntry: { authProfileOverride: "github-copilot:default" },
-    });
-    expect(label).toBe("token (github-copilot:default)");
-    expect(label).not.toContain("ghp_");
-    expect(label).not.toContain("ref(");
-  });
-
-  it("does not include api-key value in label for api-key profiles", async () => {
-    const shortSecret = "abc123"; // pragma: allowlist secret
-    profileLabel("openai:default", createApiKeyCredential("openai", shortSecret));
-    const label = await labelFor("openai", {
-      sessionEntry: { authProfileOverride: "openai:default" },
-    });
-    expect(label).toBe("api-key (openai:default)");
-    expect(label).not.toContain(shortSecret);
-    expect(label).not.toContain("...");
+  it.each([
+    [
+      "github-copilot",
+      "token",
+      {
+        type: "token",
+        provider: "github-copilot",
+        token: "synthetic-token",
+        tokenRef: { source: "env", provider: "default", id: "GITHUB_TOKEN" },
+      },
+    ],
+    ["openai", "api-key", createApiKeyCredential("openai", "abc123")],
+  ] as const)("keeps %s credential values out of labels", async (provider, mode, profile) => {
+    const profileId = `${provider}:default`;
+    profileLabel(profileId, profile);
+    expect(await labelFor(provider, { sessionEntry: { authProfileOverride: profileId } })).toBe(
+      `${mode} (${profileId})`,
+    );
   });
 
   it.each(["codex", "openai"])(
@@ -159,41 +153,35 @@ describe("resolveModelAuthLabelAsync", () => {
     });
   });
 
-  it("shows per-entry apiKey profile-reference labels before literal models.json fallback", async () => {
-    const store = createAuthProfileStoreFixture({
-      "openrouter:key-b": createApiKeyCredential("openrouter", "sk-or-actual-key-b"),
-    });
-    mocks.ensureAuthProfileStoreAsync.mockReturnValue(store);
-    mocks.resolveAuthProfileDisplayLabel.mockReturnValue("openrouter:key-b");
-    mocks.resolveProviderEntryApiKeyProfileReference.mockReturnValue({
-      kind: "profile",
-      profileId: "openrouter:key-b",
-      credential: store.profiles["openrouter:key-b"],
-      mode: "api-key",
-    });
-    mocks.resolveUsableCustomProviderApiKey.mockReturnValue({
-      apiKey: "openrouter:key-b",
-      source: "models.json",
-    });
+  it.each([false, true])(
+    "handles per-entry profile references (incompatible=%s)",
+    async (incompatible) => {
+      mocks.resolveAuthProfileDisplayLabel.mockReturnValue("openrouter:key-b");
+      mocks.resolveProviderEntryApiKeyProfileReference.mockReturnValue(
+        incompatible
+          ? {
+              kind: "profile-incompatible",
+              profileId: "google:oauth-a",
+              credentialProvider: "google",
+              credentialType: "oauth",
+              reason: "credential-class",
+            }
+          : {
+              kind: "profile",
+              profileId: "openrouter:key-b",
+              credential: createApiKeyCredential("openrouter", "sk-or-actual-key-b"),
+              mode: "api-key",
+            },
+      );
+      mocks.resolveUsableCustomProviderApiKey.mockReturnValue({
+        apiKey: incompatible ? "google:oauth-a" : "openrouter:key-b",
+        source: "models.json",
+      });
 
-    expect(await labelFor("openrouter-minimax")).toBe("api-key (openrouter:key-b)");
-    expect(mocks.resolveUsableCustomProviderApiKey).not.toHaveBeenCalled();
-  });
-
-  it("does not report incompatible per-entry profile references as literal models.json keys", async () => {
-    mocks.resolveProviderEntryApiKeyProfileReference.mockReturnValue({
-      kind: "profile-incompatible",
-      profileId: "google:oauth-a",
-      credentialProvider: "google",
-      credentialType: "oauth",
-      reason: "credential-class",
-    });
-    mocks.resolveUsableCustomProviderApiKey.mockReturnValue({
-      apiKey: "google:oauth-a",
-      source: "models.json",
-    });
-
-    expect(await labelFor("openrouter-minimax")).toBe("unknown");
-    expect(mocks.resolveUsableCustomProviderApiKey).not.toHaveBeenCalled();
-  });
+      expect(await labelFor("openrouter-minimax")).toBe(
+        incompatible ? "unknown" : "api-key (openrouter:key-b)",
+      );
+      expect(mocks.resolveUsableCustomProviderApiKey).not.toHaveBeenCalled();
+    },
+  );
 });
