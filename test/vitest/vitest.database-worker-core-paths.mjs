@@ -1,5 +1,6 @@
 // These consumers need the host-owned SQLite broker, which runs in forked processes.
 export const databaseWorkerCoreTestFiles = [
+  "src/infra/database-engine/memory-path-migration.conformance.test.ts",
   "src/auto-reply/reply/get-reply.fallback-transcript.test.ts",
   "src/config/sessions/session-actor-initialization.test.ts",
   "test/scripts/upgrade-survivor-acp-metadata.test.ts",
@@ -173,7 +174,6 @@ export const databaseWorkerCoreTestFiles = [
   "src/cli/admin-state-owner.process.test.ts",
   "src/cli/claws-cli.state-owner.test.ts",
   "src/cli/gateway-cli/run-loop.state-ownership.test.ts",
-  "src/pairing/pairing-store.test.ts",
   "src/pairing/pairing-store.worker.test.ts",
   "src/plugin-sdk/channel-pairing.store.test.ts",
   "src/hooks/bundled/session-memory/capture.test.ts",
@@ -263,7 +263,6 @@ export const databaseWorkerCoreTestFiles = [
   "src/agents/embedded-agent-runner/openrouter-model-capabilities.test.ts",
   "src/auto-reply/reply/commands-system-agent.provider.test.ts",
   "src/auto-reply/reply/commands-status.test.ts",
-  "src/cli/capability-cli/model.account-secrets.provenance.test.ts",
   "src/cli/capability-cli/model.resources.test.ts",
   "src/cli/capability-cli/local-runners.account-secrets.test.ts",
   "src/cli/models-cli.auth-login.integration.test.ts",
@@ -753,6 +752,7 @@ export const databaseWorkerCoreTestFiles = [
   "src/claws/packages.runtime.test.ts",
   "src/claws/packages.capability-consent.test.ts",
   "src/cli/local-state-owner.process.test.ts",
+  "src/cli/config-owner-route.process.test.ts",
   "src/cli/mcp-cli.login-loopback.test.ts",
   "src/cli/mcp-cli.oauth.test.ts",
   "src/cli/mcp-cli.path-case.windows.test.ts",
@@ -946,6 +946,7 @@ export const databaseWorkerCoreTestFiles = [
   "src/state/openclaw-agent-participants-migration.test.ts",
   "src/state/openclaw-agent-trajectory-storage-migration.test.ts",
   "src/state/openclaw-agent-memory-revision-migration.test.ts",
+  "src/state/openclaw-agent-cold-archive-chunks-migration.test.ts",
   "src/state/openclaw-agent-vector-decoder-migration.test.ts",
   "src/state/openclaw-agent-write-layout-migration.test.ts",
   "src/state/openclaw-agent-index-retirement-migration.test.ts",
