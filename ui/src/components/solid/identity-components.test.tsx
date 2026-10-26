@@ -1,23 +1,31 @@
 import { createSignal, flush } from "solid-js";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { i18n } from "../../i18n/index.ts";
+import { setAvatarGatewayOrigin } from "../../lib/identity-avatar-context.ts";
 /* @vitest-environment jsdom */
-import { mountSolid } from "../../test-helpers/mount-solid.ts";
+import { cleanupSolid, mountSolid } from "../../test-helpers/mount-solid.ts";
+import { waitForSolid } from "../../test-helpers/solid-settle.ts";
 import { SessionOwnerChip } from "./session-owner-chip.tsx";
 import { ViewerAvatar, ViewerFacepile, type ViewerAvatarProps } from "./viewer-facepile.tsx";
 
 const originalLocale = i18n.getLocale();
-afterEach(() => i18n.setLocale(originalLocale));
+afterEach(async () => {
+  cleanupSolid();
+  document.body.replaceChildren();
+  setAvatarGatewayOrigin(null);
+  vi.restoreAllMocks();
+  await i18n.setLocale(originalLocale);
+});
 
 it("refreshes shared-owner labels without changing identity initials on locale publication", async () => {
   const user = { id: "gateway-owner", name: "Saved owner name", watchedSessions: [] };
-  const { container } = mountSolid(() => (
+  const view = mountSolid(() => (
     <>
       <ViewerAvatar user={user} />
       <ViewerFacepile staticUsers={[user]} />
     </>
   ));
-  const avatar = () => container.querySelector(".viewer-avatar")!;
+  const avatar = () => view.container.querySelector(".viewer-avatar")!;
   expect(avatar().getAttribute("aria-label")).toBe("Saved owner name · Shared owner");
   i18n.registerTranslation("pt-BR", {
     presence: {
@@ -27,33 +35,51 @@ it("refreshes shared-owner labels without changing identity initials on locale p
   await i18n.setLocale("pt-BR");
   flush();
   expect(avatar().getAttribute("aria-label")).toBe("Saved owner name · Dono compartilhado");
-  expect(container.querySelector(".viewer-avatar__initials")?.textContent).toBe("SO");
-  expect(container.querySelector(".viewer-facepile")?.getAttribute("aria-label")).toBe(
+  expect(view.container.querySelector(".viewer-avatar__initials")?.textContent).toBe("SO");
+  expect(view.container.querySelector(".viewer-facepile")?.getAttribute("aria-label")).toBe(
     "Saved owner name · Dono compartilhado",
   );
 });
 
-it("retains a loaded Solid avatar through label updates", () => {
-  const avatarUrl = "/api/users/ada/avatar?v=1";
-  const initial = { id: "ada", name: "Ada", avatarUrl, watchedSessions: [] };
-  const [user, setUser] = createSignal<ViewerAvatarProps["user"]>(initial);
-  const { container } = mountSolid(() => <ViewerAvatar user={user()} />);
-  const avatar = () => container.querySelector<HTMLElement>(".viewer-avatar")!;
-  const image = container.querySelector("img")!;
-  expect(avatar().classList.contains("is-pending")).toBe(true);
-  image.dispatchEvent(new Event("load"));
-  flush();
-  expect(avatar().dataset.avatarState).toBe("loaded");
-  setUser((previous) => ({ ...previous!, name: "Ada Lovelace" }));
-  flush();
-  expect(container.querySelector("img")).toBe(image);
-  expect(avatar().getAttribute("aria-label")).toBe("Ada Lovelace");
-  expect(avatar().dataset.avatarState).toBe("loaded");
-  setUser((previous) => ({ ...previous!, avatarUrl: "/api/users/ada/avatar?v=2" }));
-  flush();
-  expect(container.querySelector("img")).toBe(image);
-  expect(avatar().dataset.avatarState).toBe("pending");
-});
+it.each([false, true])(
+  "retains a loaded Solid avatar through label updates (authenticated=%s)",
+  async (authenticated) => {
+    if (authenticated) {
+      setAvatarGatewayOrigin("https://gateway.example.test", ["avatar-token"]);
+      vi.spyOn(globalThis, "fetch").mockImplementation(
+        async () =>
+          new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "image/png" } }),
+      );
+      vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:solid-avatar");
+    }
+    const [user, setUser] = createSignal<ViewerAvatarProps["user"]>({
+      id: "profile-ada",
+      name: "Ada",
+      avatarUrl: "/api/users/profile-ada/avatar?v=1",
+      watchedSessions: [],
+    });
+    const { container } = mountSolid(() => <ViewerAvatar user={user()} />);
+    const avatar = () => container.querySelector<HTMLElement>(".viewer-avatar")!;
+    const image = container.querySelector("img")!;
+    expect(image).not.toBeNull();
+    expect(avatar().classList.contains("is-pending")).toBe(true);
+    if (authenticated) {
+      await waitForSolid(() => expect(image.getAttribute("src")).toBe("blob:solid-avatar"));
+    }
+    image.dispatchEvent(new Event("load"));
+    flush();
+    expect(avatar().dataset.avatarState).toBe("loaded");
+    setUser((previous) => ({ ...previous!, name: "Ada Lovelace" }));
+    flush();
+    expect(container.querySelector("img")).toBe(image);
+    expect(avatar().getAttribute("aria-label")).toBe("Ada Lovelace");
+    expect(avatar().dataset.avatarState).toBe("loaded");
+    setUser((previous) => ({ ...previous!, avatarUrl: "/api/users/profile-ada/avatar?v=2" }));
+    flush();
+    expect(container.querySelector("img")).toBe(image);
+    expect(avatar().dataset.avatarState).toBe("pending");
+  },
+);
 
 it("updates Solid owner attribution and participant stacks from the current props", () => {
   const [count, setCount] = createSignal(0);

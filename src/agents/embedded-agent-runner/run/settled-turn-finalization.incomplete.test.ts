@@ -30,8 +30,11 @@ const cutoffNotice =
 
 // Adapted from @ablake4427's #178300 reproduction: real writes and finalization,
 // with only provider I/O scripted. A summary cannot finish interrupted work.
-it("preserves a length failure after recovering a summary", async () => {
-  const sessionId = "interrupted-finalization";
+it.each([
+  { interrupted: true, label: "preserves a length failure after recovering a summary" },
+  { interrupted: false, label: "keeps genuinely completed work successful after summary recovery" },
+])("$label", async ({ interrupted }) => {
+  const sessionId = interrupted ? "interrupted-finalization" : "completed-finalization";
   await withOpenClawTestState({ label: sessionId }, async (state) => {
     const bundled = state.path("bundled");
     await fs.mkdir(bundled);
@@ -41,38 +44,47 @@ it("preserves a length failure after recovering a summary", async () => {
       const toolResults = context.messages.filter(
         (message) => message.role === "toolResult",
       ).length;
-      const write = hasTools && toolResults === 0;
-      const stopReason = !hasTools ? "stop" : write ? "toolUse" : "length";
+      const file = toolResults === 0 ? "a" : !interrupted && toolResults === 1 ? "b" : undefined;
       const message = makeAgentAssistantMessage({
         api: model.api,
         provider: model.provider,
         model: model.id,
-        stopReason,
-        ...(hasTools && !write
-          ? { usage: { ...ZERO_USAGE_FIXTURE, output: 1, totalTokens: 1 } }
-          : {}),
-        content: !hasTools
-          ? [{ type: "text", text: summary }]
-          : write
-            ? [
+        ...(hasTools && file
+          ? {
+              stopReason: "toolUse",
+              content: [
                 {
                   type: "toolCall",
-                  id: "write-a",
+                  id: `write-${file}`,
                   name: "write",
-                  arguments: { path: "a.txt", content: "alpha\n" },
-                },
-              ]
-            : [
-                {
-                  type: "thinking",
-                  thinking: "Next I need to write b.txt",
-                  thinkingSignature: "opaque-signature",
+                  arguments: {
+                    path: `${file}.txt`,
+                    content: file === "a" ? "alpha\n" : "beta\n",
+                  },
                 },
               ],
+            }
+          : hasTools
+            ? {
+                stopReason: interrupted ? "length" : "stop",
+                usage: { ...ZERO_USAGE_FIXTURE, output: 1, totalTokens: 1 },
+                content: [
+                  {
+                    type: "thinking",
+                    thinking: interrupted ? "Next I need to write b.txt" : "Both files are written",
+                    thinkingSignature: "opaque-signature",
+                  },
+                ],
+              }
+            : { stopReason: "stop", content: [{ type: "text", text: summary }] }),
       });
-      requests.push(hasTools ? (write ? "write-a" : message.stopReason) : "summary");
+      requests.push(hasTools ? (file ? `write-${file}` : message.stopReason) : "summary");
       return createQueuedAssistantStream((push) => {
-        push({ type: "done", reason: stopReason, message });
+        push({
+          type: "done",
+          reason: message.stopReason as "stop" | "length" | "toolUse",
+          message,
+        });
       });
     };
     const bridgeKey = `__finalization_fixture_${path.basename(state.root)}`;
@@ -163,24 +175,44 @@ it("preserves a length failure after recovering a summary", async () => {
               },
             });
             expect(network).not.toHaveBeenCalled();
-            expect(requests).toEqual(["write-a", "length", "summary"]);
+            expect(requests).toEqual(
+              interrupted
+                ? ["write-a", "length", "summary"]
+                : ["write-a", "write-b", "stop", "summary"],
+            );
             expect(await fs.readFile(path.join(state.workspaceDir, "a.txt"), "utf8")).toBe(
               "alpha\n",
             );
-            await expect(fs.readFile(path.join(state.workspaceDir, "b.txt"))).rejects.toMatchObject(
-              { code: "ENOENT" },
-            );
+            const bContent = await fs
+              .readFile(path.join(state.workspaceDir, "b.txt"), "utf8")
+              .catch(() => undefined);
+            expect(bContent).toBe(interrupted ? undefined : "beta\n");
             const deliveredText = result.payloads?.map((payload) => payload.text ?? "").join("\n");
             expect(deliveredText).toContain(summary);
-            expect.soft(result.meta).toMatchObject({
-              stopReason: "length",
-              completion: { stopReason: "length", finishReason: "length" },
-              error: { kind: "incomplete_turn", fallbackSafe: false },
-            });
-            expect(deliveredText).toContain(cutoffNotice);
-            const phases = lifecycle.map((event) => event.phase);
-            expect.soft(phases).toContain("error");
-            expect.soft(phases).not.toContain("end");
+            if (interrupted) {
+              expect(deliveredText).toContain(cutoffNotice);
+              expect.soft(result.meta.error).toMatchObject({
+                kind: "incomplete_turn",
+                fallbackSafe: false,
+              });
+              expect.soft(result.meta.stopReason).toBe("length");
+              expect.soft(result.meta.completion).toMatchObject({
+                stopReason: "length",
+                finishReason: "length",
+              });
+              expect.soft(lifecycle.filter((event) => event.phase === "end")).toEqual([]);
+              expect.soft(lifecycle).toContainEqual(expect.objectContaining({ phase: "error" }));
+            } else {
+              expect(deliveredText).not.toContain(cutoffNotice);
+              expect(result.meta.error).toBeUndefined();
+              expect(result.meta.stopReason).toBe("stop");
+              expect(result.meta.completion).toMatchObject({
+                stopReason: "stop",
+                finishReason: "stop",
+              });
+              expect(lifecycle.filter((event) => event.phase === "error")).toEqual([]);
+              expect(lifecycle).toContainEqual(expect.objectContaining({ phase: "end" }));
+            }
           } finally {
             admission.close();
             await resetPreparedModelRuntimeSnapshotsForTest();

@@ -26,6 +26,8 @@ afterEach(cleanup);
 
 describe("Solid menu navigation", () => {
   it.each([true, "while-open"] as const)("owns lazy content across reopen (%s)", async (lazy) => {
+    let itemReads = 0;
+    let childrenReads = 0;
     const [label, setLabel] = createSignal("Ready");
     const [placement, setPlacement] = createSignal<"bottom-start" | "top-end">("bottom-start");
     const view = mountMenu({
@@ -34,12 +36,16 @@ describe("Solid menu navigation", () => {
         return placement();
       },
       get items() {
+        itemReads += 1;
         return [{ id: "ready", label: label() }];
       },
       get children() {
+        childrenReads += 1;
         return <span>Lazy heading</span>;
       },
     });
+    expect(itemReads).toBe(0);
+    expect(childrenReads).toBe(0);
     const button = trigger();
     const panel = surface();
     expect(panel.querySelector("[role=menuitem]")).toBeNull();
@@ -51,6 +57,7 @@ describe("Solid menu navigation", () => {
     await keyPhase("{ArrowDown}", "open");
     const ready = item("Ready");
     expect(document.activeElement).toBe(ready);
+    expect(childrenReads).toBe(1);
     const anchorName = button.style.getPropertyValue("anchor-name");
     expect(anchorName).toMatch(/^--oc-overlay-/);
     expect(panel.style.getPropertyValue("position-anchor")).toBe(anchorName);
@@ -67,6 +74,7 @@ describe("Solid menu navigation", () => {
     expect(document.activeElement).toBe(current);
     if (lazy === true) {
       expect(current).toBe(ready);
+      expect(childrenReads).toBe(1);
     }
     expect(button.style.getPropertyValue("anchor-name")).toBe(anchorName);
     view.unmount();
