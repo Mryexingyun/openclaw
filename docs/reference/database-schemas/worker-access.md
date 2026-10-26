@@ -180,6 +180,9 @@ replacement detection, and live disclosure authority remain with their owners.
 Session row projections borrow the replica's immutable nested entry facts while
 owning their mutable outer rows. Commit receipts carry pending final delivery in
 the canonical entry postimage, without a second copy.
+Session-entry patch preparation sends only logical entries and their keys. SQL row,
+window, and side-table facts stay with the worker; callback commits retain the same
+entry comparison, admission ordering, and persisted bytes.
 
 Session file reads retain workspace authority independently of evictable display
 rows. Committed writers carry their existing full postimages to predicates that
@@ -523,6 +526,9 @@ Inside the durable worker, hot state and its stored entry row share one owned
 decoded entry. Mutations replace that entry instead of editing it in place;
 transaction forks retain the previous entry for rollback. Incoming postimages
 and outgoing public reads remain detached from the resident state.
+Internal hot-state projections also retain the actor's replace-only target,
+version, participants, and members. Read replies and committed receipt capture
+own detachment before those facts leave the worker.
 
 Replica lookups resolve configured path spellings through the existing admission
 registry: SQLite uses the admitted physical identity and birthtime; PostgreSQL

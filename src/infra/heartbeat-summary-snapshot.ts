@@ -6,17 +6,6 @@ import { tryResolveCronJobEffectiveAgentId } from "../cron/agent-id.js";
 import { CronStoreSelectionRequiredError } from "../cron/store/selection-error.js";
 import type { CronJob } from "../cron/types.js";
 
-type HeartbeatSummary = {
-  enabled: boolean;
-  every: string;
-  everyMs: number | null;
-  prompt: string;
-  target: string;
-  model?: string;
-  session?: string;
-  ackMaxChars: number;
-};
-
 function resolveHeartbeatSummaryJobs(
   cfg: OpenClawConfig,
   jobs: readonly CronJob[],
@@ -54,10 +43,7 @@ export async function readHeartbeatSummaryForStatus(read: () => Promise<CronJob[
   }
 }
 
-export function projectHeartbeatSummary(
-  job?: CronJob,
-  selectionWarning?: string,
-): HeartbeatSummary {
+export function projectHeartbeatSummary(job?: CronJob, selectionWarning?: string) {
   const enabled = Boolean(!selectionWarning && job?.enabled && !job.state.autoDisabled);
   const everyMs = job?.schedule.kind === "every" ? job.schedule.everyMs : null;
   return {
