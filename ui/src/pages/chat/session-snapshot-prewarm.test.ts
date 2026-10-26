@@ -66,7 +66,7 @@ describe("routed transcript prewarm", () => {
     expect(open).toHaveBeenCalledTimes(2);
   });
 
-  it("reads raw records without validation and rejects malformed prewarm when consumed", async () => {
+  it("rejects malformed records during prewarm admission", async () => {
     await seed();
     const invalid = {
       projectionVersion: 3,
