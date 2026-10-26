@@ -890,6 +890,7 @@ describeStandaloneMockServer("standalone native plugin preview", () => {
         : undefined,
     });
     const page = await context.newPage();
+    let completed = false;
     try {
       await page.goto(new URL("/workboard", server.url).toString());
       await page.getByText("Capture customer feedback themes", { exact: true }).waitFor();
@@ -933,8 +934,11 @@ describeStandaloneMockServer("standalone native plugin preview", () => {
           fullPage: true,
         });
       }
+      completed = true;
     } finally {
-      await page.screenshot({ path: path.join(artifactDir, "final.png"), fullPage: true });
+      if (captureUiProof || !completed) {
+        await page.screenshot({ path: path.join(artifactDir, "final.png"), fullPage: true });
+      }
       await context.close();
     }
   });
