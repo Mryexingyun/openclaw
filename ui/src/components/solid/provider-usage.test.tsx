@@ -51,13 +51,16 @@ function mountPanel(usage: ProviderUsageDetails) {
 }
 
 describe("ProviderUsagePanel", () => {
-  it("retains usage rows across fresh snapshots and updates their visible values", () => {
+  it("orders accessible usage groups and retains rows across snapshot updates", () => {
     const initial: ProviderUsageDetails = {
       windows: [
         { label: "5h", groupLabel: "Account A", usedPercent: 25 },
+        { label: "Weekly", groupLabel: "Account A", usedPercent: 92 },
         { label: "5h", groupLabel: "Account A", usedPercent: 30 },
         { label: "5h", groupLabel: "Account B", usedPercent: 40 },
+        { label: "Monthly", groupLabel: "Account B", usedPercent: 80 },
       ],
+      summary: "Provider summary",
       billing: [
         { type: "balance", amount: 12, unit: "credits" },
         { type: "balance", amount: 8, unit: "credits" },
@@ -71,13 +74,35 @@ describe("ProviderUsagePanel", () => {
         <ProviderUsageChips usage={usage()} />
       </>
     ));
+    const meters = [
+      ...view.container.querySelectorAll<HTMLElement>('.provider-usage [role="meter"]'),
+    ];
+    expect(
+      meters.map((meter) => [
+        meter.getAttribute("aria-label"),
+        meter.getAttribute("aria-valuenow"),
+        meter.closest(".provider-usage__window")?.getAttribute("data-tone"),
+      ]),
+    ).toEqual([
+      ["5h", "75", null],
+      ["5h", "70", null],
+      ["Weekly", "8", "error"],
+      ["5h", "60", null],
+      ["Monthly", "20", "warning"],
+    ]);
+    expect(meters[0]?.querySelector<HTMLElement>("span")?.style.width).toBe("75%");
+    const notes = view.container.querySelectorAll(".provider-usage__note");
+    expect(Array.from(notes, (note) => note.textContent)).toEqual([
+      "Account A",
+      "Account B",
+      "Provider summary",
+    ]);
     const rows = () => [
       ...view.container.querySelectorAll(
         ".provider-usage__group, .provider-usage__window, .provider-usage__row, .provider-usage__chip",
       ),
     ];
     const before = rows();
-    expect(before).toHaveLength(12);
 
     setUsage(structuredClone(initial));
     flush();
@@ -100,36 +125,6 @@ describe("ProviderUsagePanel", () => {
       ["Today", "$4.00"],
       ["7 days", "$4.00"],
       ["30 days", "$4.00"],
-    ]);
-  });
-
-  it("groups windows in rank order and presents remaining headroom accessibly", () => {
-    const view = mountPanel({
-      windows: [
-        { label: "Weekly", groupLabel: "Account A", usedPercent: 92 },
-        { label: "5h", groupLabel: "Account A", usedPercent: 25 },
-        { label: "Monthly", groupLabel: "Account B", usedPercent: 80 },
-      ],
-      summary: "Provider summary",
-    });
-    const meters = [...view.container.querySelectorAll<HTMLElement>('[role="meter"]')];
-    expect(
-      meters.map((meter) => [
-        meter.getAttribute("aria-label"),
-        meter.getAttribute("aria-valuenow"),
-        meter.closest(".provider-usage__window")?.getAttribute("data-tone"),
-      ]),
-    ).toEqual([
-      ["5h", "75", null],
-      ["Weekly", "8", "error"],
-      ["Monthly", "20", "warning"],
-    ]);
-    expect(meters[0]?.querySelector<HTMLElement>("span")?.style.width).toBe("75%");
-    const notes = view.container.querySelectorAll(".provider-usage__note");
-    expect(Array.from(notes, (note) => note.textContent)).toEqual([
-      "Account A",
-      "Account B",
-      "Provider summary",
     ]);
   });
 

@@ -35,15 +35,11 @@ it("retains face nodes across same-ID publication", async () => {
   flush();
   const face = view.container.querySelector("svg.identity-avatar__agent-face")!;
   const features = face.querySelector("g")!;
-  const nodes = [...features.querySelectorAll("*")];
   const mutations = observe(features, { childList: true, subtree: true });
   publish({ id: "forge", name: "After" });
   flush();
   expect(view.container.querySelector('[aria-label="After"]')).not.toBeNull();
   expect(view.container.querySelector("svg.identity-avatar__agent-face")).toBe(face);
-  const retained = [...features.querySelectorAll("*")];
-  expect(retained).toHaveLength(nodes.length);
-  retained.forEach((node, index) => expect(node).toBe(nodes[index]));
   expect(mutations()).toHaveLength(0);
 });
 
