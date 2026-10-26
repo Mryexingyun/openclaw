@@ -11,10 +11,12 @@ const m = vi.hoisted(() => ({
   synthetic: vi.fn(),
   prepare: vi.fn(),
 }));
+// mock-isolation: Discovery uses synthetic stores without opening host credentials.
 vi.mock("./auth-profiles/store-runtime.js", () => ({
   ensureAuthProfileStoreAsync: m.store,
   ensureAuthProfileStoreWithoutExternalProfilesAsync: m.localStore,
 }));
+// mock-isolation: Resolve only the synthetic credential map supplied by this fixture.
 vi.mock("./agent-auth-credentials.js", () => ({
   resolveAgentCredentialMapFromStore: m.credentials,
 }));
@@ -26,9 +28,11 @@ vi.mock("./model-auth-env.js", async (original) => ({
   ...(await original<typeof import("./model-auth-env.js")>()),
   resolveEnvApiKey: m.env,
 }));
+// mock-isolation: Keep discovery scoped to the fixture's synthetic provider roster.
 vi.mock("../plugins/synthetic-auth.runtime.js", () => ({
   resolveRuntimeSyntheticAuthProviderRefs: m.refs,
 }));
+// mock-isolation: Plugin credential preparation must not load real provider runtimes.
 vi.mock("../plugins/provider-runtime.js", () => ({
   resolveProviderSyntheticAuthWithPlugin: m.synthetic,
   prepareProviderSyntheticAuthWithPlugin: m.prepare,

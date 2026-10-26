@@ -207,7 +207,8 @@ it("resumes within a legacy turn after an append, then advances to the next nati
     }
     return turnPage(source, "turn-anchor", "older-turns");
   });
-  const control = createEligibleControl({ listTurnPage });
+  const readThread = vi.fn<CodexSessionCatalogControl["readThread"]>();
+  const control = createEligibleControl({ listTurnPage, readThread });
 
   const first = await readTranscript(control, 3);
   expect(first).toMatchObject({
@@ -233,7 +234,7 @@ it("resumes within a legacy turn after an append, then advances to the next nati
   expect(listTurnPage.mock.calls.map(([request]) => request.limit)).toEqual([1, 1, 1, 1]);
   expect(listTurnPage.mock.calls[1]?.[0].cursor).toBe("turn-anchor");
   expect(listTurnPage).toHaveBeenCalledWith(expect.objectContaining({ itemsView: "full" }));
-  expect(control.readThread).not.toHaveBeenCalled();
+  expect(readThread).not.toHaveBeenCalled();
 });
 
 it.each([

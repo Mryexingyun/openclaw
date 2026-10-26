@@ -20,11 +20,13 @@ vi.mock("./auth-profiles.js", () => ({
   resolveAuthProfileOrder: m.order,
   resolveAuthProfileDisplayLabel: m.display,
 }));
+// mock-isolation: Label projection consumes controlled credential-source facts.
 vi.mock("./model-auth.js", () => ({
   resolveProviderEntryApiKeyProfileReference: m.reference,
   resolveUsableCustomProviderApiKey: m.custom,
   resolveEnvApiKey: m.env,
 }));
+// mock-isolation: CLI credentials come from the fixture, never the host Keychain.
 vi.mock("./cli-credentials.js", () => ({ readCodexCliCredentialsCached: m.cli }));
 
 beforeEach(() => {
