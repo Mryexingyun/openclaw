@@ -108,11 +108,13 @@ export async function buildOnboardingWelcome(params: {
     );
   }
 
-  const { DEFAULT_WORKSPACE } = await import("../commands/onboard-helpers.js");
   // A durable receipt owns recovery even after partial config writes; using its
   // workspace prevents the fallback chat from resuming a different installation.
   const workspace = resolveUserPath(
-    pendingSetup?.workspace || requestedWorkspace || authoredWorkspace || DEFAULT_WORKSPACE,
+    pendingSetup?.workspace ||
+      requestedWorkspace ||
+      authoredWorkspace ||
+      (await import("../commands/onboard-helpers.js")).DEFAULT_WORKSPACE,
   );
 
   params.engine.propose({
