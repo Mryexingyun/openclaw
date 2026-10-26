@@ -17,3 +17,43 @@ node --import ./scripts/tsx.mjs scripts/perf/pairing-live-measure.mts \
   --out <internal-task-output> \
   --observer <frozen-harness>/observer.cjs
 ```
+
+## Host telemetry checkpoint acceptance (preregistered)
+
+The heartbeat checkpoint change uses this real Gateway and paired-node flow with
+the frozen v3.1.5 observer, causality observer, and background roots. Reproduce the
+current-main heartbeat writes before changing production code. Count cold startup,
+the first accepted sample, a 15-minute steady phase, disconnect, and shutdown
+separately. Keep all fixture state synthetic. The earlier requirement for at least
+two persisted samples in 130 seconds describes the old cadence; the checkpoint
+workload replaces it with the following contract.
+
+Run five alternating baseline/candidate pairs on the same platform. For one node
+reporting every minute, steady heartbeat work must fall from approximately 75 SQL
+statements and 15 execute requests to at most 20 statements and four requests per
+15 minutes. Runtime main-thread SQL must remain zero. Report per-operation counts
+and rates, median, p95, and min–max separately for each phase. Count whole-process
+and main-thread work, including final persistence, to expose relocated cost.
+
+Record per-thread CPU profiles, CPU totals, RSS/heap, event-response and catalog
+latency, and broadcast counts. Every accepted report must remain immediately
+visible in the live catalog and broadcast stream. User-facing metrics must hold
+or improve; an adverse 20% cell stops the change, and smaller adverse movement
+needs explicit disposition. Wall-clock/CPU A/B runs require the campaign timing
+lock and load below 24. After 60 minutes without timing admission, report only
+counts/profile evidence and the unmeasured timing limitation.
+
+Behavioral acceptance also requires durable-immediate revocation and identity
+changes, a report arriving during an outstanding checkpoint, final-sample
+disconnect persistence, shutdown drain before worker retirement, crash/reload
+staleness bounded by the checkpoint interval, offline catalog parity, and passing
+revision-consumer suites. Keep security and all other paired-state writes
+immediate; only `lastHostStats` is coalesced in the existing NodeRegistry.
+
+The approved tradeoffs are explicit: a crash can lose roughly five minutes of
+host telemetry, and the offline catalog can briefly display the previous durable
+sample while disconnect persistence settles. The five-minute deadline is anchored
+to the last persisted sample's receipt time and assumes continuing reports and
+successful scheduling/storage; completion delay and sensor silence remain visible
+in the original `updatedAtMs`. First-sample persistence is immediate. No schema,
+second pairing store, or memory-only authorization revision is introduced.
