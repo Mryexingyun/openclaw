@@ -78,6 +78,7 @@ import { resolveSelectedModelCredential } from "./model-auth-selected-credential
 import { hasAuthoredProviderRequestParams } from "./model-extra-params.js";
 import { splitTrailingAuthProfile } from "./model-ref-profile.js";
 import type { CliRuntimeAuthDirectories } from "./model-runtime-aliases.js";
+import { resolveModelRuntimePolicy } from "./model-runtime-policy.js";
 import { resolveDefaultModelForAgent } from "./model-selection-config.js";
 import {
   createOpenAIModelRoutesResolver,
@@ -1333,9 +1334,10 @@ export function createModelAuthAvailabilityResolver(
     ),
     evaluateModelAuth,
     evaluateRuntimeModelAuth: (provider, ref = {}) => {
-      const runtimeId =
-        ref.runtimeId ??
-        resolveAgentHarnessPolicy({
+      let runtimeId = ref.runtimeId;
+      let configuredRuntimePolicy: ReturnType<typeof resolveModelRuntimePolicy> | undefined;
+      if (runtimeId === undefined) {
+        const policyParams = {
           config: params.cfg,
           agentId: params.agentId,
           provider,
@@ -1343,12 +1345,20 @@ export function createModelAuthAvailabilityResolver(
           modelApi: ref.api,
           modelBaseUrl: ref.baseUrl,
           env: params.env,
-        }).runtime;
+        };
+        configuredRuntimePolicy = resolveModelRuntimePolicy(policyParams);
+        runtimeId = resolveAgentHarnessPolicy(policyParams, configuredRuntimePolicy).runtime;
+      }
       const evaluation = evaluateModelAuth(provider, { ...ref, runtimeId });
       if (isPluginAuthProvider(provider) || ref.requiredProfileId?.trim()) {
         return evaluation;
       }
-      const runtimeEvaluation = evaluateCliRuntimeAuth(provider, { ...ref, runtimeId }, evaluation);
+      const runtimeEvaluation = evaluateCliRuntimeAuth(
+        provider,
+        { ...ref, runtimeId },
+        evaluation,
+        configuredRuntimePolicy,
+      );
       return runtimeEvaluation
         ? withSelectedCredential(provider, {
             ...runtimeEvaluation,
