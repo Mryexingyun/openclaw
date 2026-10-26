@@ -34,6 +34,22 @@ const rowValues = (container: HTMLElement) =>
     row.querySelector(".oc-menu-panel-usage-value")?.textContent,
   ]);
 
+function costHistory(
+  daily: ProviderUsageCostDaily[],
+  overrides: Partial<NonNullable<ProviderUsageDetails["costHistory"]>> = {},
+): NonNullable<ProviderUsageDetails["costHistory"]> {
+  return { unit: "USD", periodDays: 30, daily, models: [], categories: [], ...overrides };
+}
+
+function mountPanel(usage: ProviderUsageDetails) {
+  const { container } = mountSolid(() => <ProviderUsagePanel usage={usage} />);
+  return {
+    container,
+    query: (selector: string) => container.querySelector<HTMLElement>(selector),
+    rows: () => rowValues(container),
+  };
+}
+
 describe("ProviderUsagePanel", () => {
   it("retains usage rows across fresh snapshots and updates their visible values", () => {
     const initial: ProviderUsageDetails = {
@@ -46,13 +62,7 @@ describe("ProviderUsagePanel", () => {
         { type: "balance", amount: 12, unit: "credits" },
         { type: "balance", amount: 8, unit: "credits" },
       ],
-      costHistory: {
-        unit: "USD",
-        periodDays: 30,
-        daily: [dailyUsage(new Date().toISOString().slice(0, 10), 2)],
-        models: [],
-        categories: [],
-      },
+      costHistory: costHistory([dailyUsage(new Date().toISOString().slice(0, 10), 2)]),
     };
     const [usage, setUsage] = createSignal(initial);
     const view = mountSolid(() => (
@@ -80,15 +90,10 @@ describe("ProviderUsagePanel", () => {
     setUsage(changed);
     flush();
     expect(rows()).toEqual(before);
-    expect(view.container.querySelector('[role="meter"]')?.getAttribute("aria-valuenow")).toBe(
-      "10",
-    );
-    expect(view.container.querySelector(".provider-usage__window")?.getAttribute("data-tone")).toBe(
-      "error",
-    );
-    expect(view.container.querySelector(".provider-usage__chip-value")?.textContent).toBe(
-      "10% left",
-    );
+    const query = (selector: string) => view.container.querySelector<HTMLElement>(selector);
+    expect(query('[role="meter"]')?.getAttribute("aria-valuenow")).toBe("10");
+    expect(query(".provider-usage__window")?.dataset.tone).toBe("error");
+    expect(query(".provider-usage__chip-value")?.textContent).toBe("10% left");
     expect(rowValues(view.container)).toEqual([
       ["Balance", "14 credits"],
       ["Balance", "8 credits"],
@@ -99,18 +104,14 @@ describe("ProviderUsagePanel", () => {
   });
 
   it("groups windows in rank order and presents remaining headroom accessibly", () => {
-    const view = mountSolid(() => (
-      <ProviderUsagePanel
-        usage={{
-          windows: [
-            { label: "Weekly", groupLabel: "Account A", usedPercent: 92 },
-            { label: "5h", groupLabel: "Account A", usedPercent: 25 },
-            { label: "Monthly", groupLabel: "Account B", usedPercent: 80 },
-          ],
-          summary: "Provider summary",
-        }}
-      />
-    ));
+    const view = mountPanel({
+      windows: [
+        { label: "Weekly", groupLabel: "Account A", usedPercent: 92 },
+        { label: "5h", groupLabel: "Account A", usedPercent: 25 },
+        { label: "Monthly", groupLabel: "Account B", usedPercent: 80 },
+      ],
+      summary: "Provider summary",
+    });
     const meters = [...view.container.querySelectorAll<HTMLElement>('[role="meter"]')];
     expect(
       meters.map((meter) => [
@@ -124,75 +125,59 @@ describe("ProviderUsagePanel", () => {
       ["Monthly", "20", "warning"],
     ]);
     expect(meters[0]?.querySelector<HTMLElement>("span")?.style.width).toBe("75%");
-    expect(
-      Array.from(
-        view.container.querySelectorAll(".provider-usage__note"),
-        (note) => note.textContent,
-      ),
-    ).toEqual(["Account A", "Account B", "Provider summary"]);
+    const notes = view.container.querySelectorAll(".provider-usage__note");
+    expect(Array.from(notes, (note) => note.textContent)).toEqual([
+      "Account A",
+      "Account B",
+      "Provider summary",
+    ]);
   });
 
   it("names a used-up window and when it comes back", () => {
     const resetAt = Date.now() + 3 * 3_600_000;
-    const view = mountSolid(() => (
-      <ProviderUsagePanel
-        usage={{
-          windows: [
-            { label: "Premium", usedPercent: 100, resetAt },
-            { label: "Chat", usedPercent: 0 },
-          ],
-        }}
-      />
-    ));
-    const alert = view.container.querySelector('.provider-usage__alert[role="status"]');
+    const view = mountPanel({
+      windows: [
+        { label: "Premium", usedPercent: 100, resetAt },
+        { label: "Chat", usedPercent: 0 },
+      ],
+    });
+    const alert = view.query('.provider-usage__alert[role="status"]');
     expect(alert?.textContent).toMatch(/^Premium is used up until .+\.$/u);
-    const reset = view.container.querySelector(".provider-usage__window .provider-usage__reset");
+    const reset = view.query(".provider-usage__window .provider-usage__reset");
     expect(reset?.textContent).toMatch(/^Resets .+ · in 3h$/u);
-    // A window with no reported reset says nothing rather than guessing.
     expect(view.container.querySelectorAll(".provider-usage__reset")).toHaveLength(1);
   });
 
   it.each([
-    { unit: " usd ", amount: "$12.50", zero: "$0.00" },
-    { unit: "jPy", amount: "¥13", zero: "¥0" },
-    { unit: " Credits ", amount: "12.5  Credits ", zero: "0  Credits " },
+    { unit: " usd ", amount: "$12.50" },
+    { unit: "jPy", amount: "¥13" },
+    { unit: " Credits ", amount: "12.5  Credits " },
   ])("renders provider-billed cost windows and attribution in $unit", ({ unit, amount }) => {
     const today = new Date().toISOString().slice(0, 10);
-    const view = mountSolid(() => (
-      <ProviderUsagePanel
-        usage={{
-          windows: [],
-          billing: [{ type: "budget", used: 2.5, limit: 10, unit: "USD" }],
-          costHistory: {
-            unit,
-            periodDays: 30,
-            daily: [
-              dailyUsage(today, 12.5, {
-                requests: 42,
-                inputTokens: 1_000,
-                cacheReadTokens: 400,
-                outputTokens: 250,
-                totalTokens: 1_250,
-              }),
-              dailyUsage("2026-01-01", 0, { requests: 1, inputTokens: 50, outputTokens: 10 }),
-            ],
-            models: [
-              {
-                name: "gpt-5.5",
-                requests: 42,
-                inputTokens: 1_000,
-                cacheReadTokens: 400,
-                cacheWriteTokens: 0,
-                outputTokens: 250,
-                totalTokens: 1_250,
-              },
-            ],
-            categories: [{ name: "Responses", amount: 12.5 }],
-          },
-        }}
-      />
-    ));
-    expect(rowValues(view.container)).toEqual([
+    const tokens = {
+      requests: 42,
+      inputTokens: 1_000,
+      cacheReadTokens: 400,
+      cacheWriteTokens: 0,
+      outputTokens: 250,
+      totalTokens: 1_250,
+    };
+    const view = mountPanel({
+      windows: [],
+      billing: [{ type: "budget", used: 2.5, limit: 10, unit: "USD" }],
+      costHistory: costHistory(
+        [
+          dailyUsage(today, 12.5, tokens),
+          dailyUsage("2026-01-01", 0, { requests: 1, inputTokens: 50, outputTokens: 10 }),
+        ],
+        {
+          unit,
+          models: [{ name: "gpt-5.5", ...tokens }],
+          categories: [{ name: "Responses", amount: 12.5 }],
+        },
+      ),
+    });
+    expect(view.rows()).toEqual([
       ["Budget", "$2.50 / $10.00"],
       ["Today", amount],
       ["7 days", amount],
@@ -200,7 +185,7 @@ describe("ProviderUsagePanel", () => {
       ["Top models", "gpt-5.5 1.3k"],
       ["Cost categories", `Responses ${amount}`],
     ]);
-    const trend = view.container.querySelector(".provider-usage__trend")!;
+    const trend = view.query(".provider-usage__trend")!;
     expect(trend.querySelector('[role="img"]')?.getAttribute("aria-label")).toBe(
       "Daily provider cost",
     );
@@ -214,30 +199,25 @@ describe("ProviderUsagePanel", () => {
       const today = "2026-09-07";
       const usage = {
         windows: [],
-        costHistory: {
-          unit: "credits",
-          periodDays: 30,
-          daily: [
+        costHistory: costHistory(
+          [
             dailyUsage(today, 2, { cacheReadTokens: 2 ** 53 }),
             dailyUsage(today, Number.NaN, { cacheReadTokens: 1, cacheWriteTokens: -(2 ** 53) }),
             dailyUsage(today, -0),
           ],
-          models: [],
-          categories: [],
-        },
+          { unit: "credits" },
+        ),
       };
       const before = structuredClone(usage);
-      const view = mountSolid(() => <ProviderUsagePanel usage={usage} />);
-      const path = view.container.querySelector(".oc-sparkline-line")?.getAttribute("d");
+      const view = mountPanel(usage);
+      const path = view.query(".oc-sparkline-line")?.getAttribute("d");
       expect(path).toBe("M0 3.0 H40.0 V27.0 H80.0 V27.0 H120.0");
-      expect(rowValues(view.container).map(([, value]) => value)).toEqual([
+      expect(view.rows().map(([, value]) => value)).toEqual([
         "NaN credits",
         "NaN credits",
         "NaN credits",
       ]);
-      expect(view.container.querySelector(".provider-usage__trend")?.textContent).toContain(
-        "0 cache",
-      );
+      expect(view.query(".provider-usage__trend")?.textContent).toContain("0 cache");
       expect(usage).toEqual(before);
     } finally {
       vi.useRealTimers();
