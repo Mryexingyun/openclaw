@@ -39,6 +39,7 @@ function observe(overrides: Partial<PromptObservabilityInput> = {}, skipped = fa
       runId: "run-1",
       senderId: "sender-1",
       sessionId: "session-1",
+      sessionFile: "/tmp/session.jsonl",
       workspaceDir: "/tmp/workspace",
     },
     cacheTrace: { recordStage: hoisted.recordStage },

@@ -13,6 +13,7 @@ import { resolveOpenClawAgentSqlitePath } from "../../state/openclaw-agent-db.pa
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { createDirectChatContext } from "../server-chat.agent-events.test-helpers.js";
 import { artifactsHandlers } from "./artifacts.js";
+import type { RespondFn } from "./types.js";
 
 it.each(["default", "custom", "configured alias", "selected alias"] as const)(
   "retains the artifact history reader between lists and closes its %s store",

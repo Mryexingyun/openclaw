@@ -57,7 +57,7 @@ it.each<[string, PathSegment[], number | undefined]>([
   expect(match?.[1] ? Number(match[1]) : undefined).toBe(expected);
 });
 
-it.each([
+it.each<[string, unknown, string, string, string?]>([
   [
     "UTF-16 truncation",
     `${"x".repeat(155)}🎉tail`,
@@ -68,7 +68,7 @@ it.each([
   ["object values", { nested: true }, "some.path", "invalid input"],
   ["NaN", Number.NaN, "some.path", "invalid input, got: NaN"],
   ["negative zero", -0, "some.path", "invalid input, got: -0"],
-] as const)("handles %s", (_name, value, path, expected, message = "invalid input") => {
+])("handles %s", (_name, value, path, expected, message = "invalid input") => {
   expect(receivedHint(value, path, message)).toBe(expected);
 });
 

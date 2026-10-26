@@ -4,6 +4,8 @@ import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { afterEach, expect, vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
 import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
+import { readGatewayLockProcessNamespace } from "../../infra/gateway-lock-payload.js";
+import { acquireGatewayStateOwner } from "../../infra/gateway-state-owner.js";
 import type { SqlConnection } from "../../infra/sql-connection.js";
 import type {
   SqliteWorkerOperations,
@@ -17,6 +19,8 @@ import {
   closeOpenClawStateDatabaseAsync,
   openOpenClawStateDatabase,
 } from "../../state/openclaw-state-db.js";
+import type { OpenClawStateWorkerContext } from "../../state/openclaw-state-worker-context.types.js";
+import type { OpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { persistSessionTranscriptTurn } from "./session-accessor.transcript-turn.js";
 import { useReconcileWorkerObserver } from "./session-transcript-reconcile.test-support.js";
 
@@ -130,6 +134,26 @@ export function observeCanonicalWriterLeases() {
   });
   const restore = () => spy.mockRestore();
   return { leases, restore, [Symbol.dispose]: restore };
+}
+
+export function acquireReconcileGatewayOwner(
+  context: OpenClawStateWorkerContext,
+  state: OpenClawTestState,
+  owned: boolean,
+) {
+  return owned
+    ? acquireGatewayStateOwner({
+        databasePath: context.admission.databasePath,
+        payload: {
+          pid: process.pid,
+          processNamespace: readGatewayLockProcessNamespace(),
+          createdAt: new Date().toISOString(),
+          configPath: state.configPath,
+          stateDir: state.stateDir,
+          role: "gateway",
+        },
+      })
+    : undefined;
 }
 
 // Intercept only execution; preserve the real operation's admission and lifetime arguments.

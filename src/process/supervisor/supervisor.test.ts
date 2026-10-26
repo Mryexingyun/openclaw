@@ -698,7 +698,7 @@ describe("process supervisor", () => {
     "retains %s ownership after the root result until cleanup fails",
     async (policy, signal) => {
       const { adapter, extinction } = owned();
-      const cleanup = scopeCleanup(policy);
+      const cleanup = supervisor.acquireScopeCleanup("scope", { processTree: policy });
       const run = await spawn({ scopeKey: "scope" });
       adapter.emitStdout("root output");
       adapter.settle(23);
@@ -715,7 +715,9 @@ describe("process supervisor", () => {
       expect(adapter.killMock).toHaveBeenCalledOnce();
       await expect(cleanup()).rejects.toThrow("cleanup identity lost");
       await expect(cleanup()).rejects.toThrow("cleanup identity lost");
-      await expect(scopeCleanup("required-all")()).resolves.toBeUndefined();
+      await expect(
+        supervisor.acquireScopeCleanup("scope", { processTree: "required-all" })(),
+      ).resolves.toBeUndefined();
       await expect(supervisor.shutdown()).rejects.toThrow("cleanup identity lost");
       await expect(spawn()).rejects.toThrow("process supervisor is shut down");
     },

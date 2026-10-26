@@ -490,7 +490,10 @@ describe("Mistral provider", () => {
       ),
     );
     const stream = streamMistral(makeMistralModel(), context, { apiKey: "fixture" });
-    const events = await Array.fromAsync(stream);
+    const events = [];
+    for await (const event of stream) {
+      events.push(event);
+    }
     expect((await stream.result()).content).toEqual([
       { type: "thinking", thinking: "😀 x" },
       { type: "text", text: "done" },

@@ -16,7 +16,7 @@ import {
 
 describe("process error handlers", () => {
   let originalExitCode: typeof process.exitCode;
-  let exitSpy: ReturnType<typeof vi.spyOn>;
+  let exitCalls: Array<string | number | null>;
   let errorSpy: ReturnType<typeof vi.spyOn>;
   let warnSpy: ReturnType<typeof vi.spyOn>;
   let rejectionListener: (reason: unknown, promise: Promise<unknown>) => void;
@@ -35,7 +35,13 @@ describe("process error handlers", () => {
   beforeEach(() => {
     originalExitCode = process.exitCode;
     process.exitCode = undefined;
-    exitSpy = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
+    exitCalls = [];
+    vi.spyOn(process, "exit").mockImplementation((code?: string | number | null): never => {
+      if (code !== undefined && code !== null) {
+        exitCalls.push(code);
+      }
+      return undefined as never;
+    });
     errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
   });
@@ -50,12 +56,6 @@ describe("process error handlers", () => {
   const emitUnhandled = (reason: unknown) => {
     process.emit("unhandledRejection", reason, Promise.resolve());
   };
-  const expectLog = (spy: typeof errorSpy, label: string, message: string) =>
-    expect(spy).toHaveBeenCalledWith(`[openclaw] ${label}`, expect.stringContaining(message));
-  const expectNoExit = () => {
-    expect(exitSpy).not.toHaveBeenCalled();
-    expect(restoreRuntimeTerminalStateMock).not.toHaveBeenCalled();
-  };
 
   it.each([
     ["ERR_OUT_OF_MEMORY", 1, "fatal unhandled rejection", "FATAL unhandled rejection:"],
@@ -68,11 +68,14 @@ describe("process error handlers", () => {
       emitUnhandled(Object.assign(new Error("expected failure"), { code }));
       expect(await waitForCliSignalExit()).toBe(exitCode);
       expect(process.exitCode).toBe(exitCode);
-      expect(exitSpy).not.toHaveBeenCalled();
+      expect(exitCalls).toEqual([]);
       expect(restoreRuntimeTerminalStateMock).toHaveBeenCalledWith(reason, {
         resumeStdinIfPaused: false,
       });
-      expectLog(errorSpy, label, "expected failure");
+      expect(errorSpy).toHaveBeenCalledWith(
+        `[openclaw] ${label}`,
+        expect.stringContaining("expected failure"),
+      );
       expect(warnSpy).not.toHaveBeenCalled();
     },
   );
@@ -97,20 +100,29 @@ describe("process error handlers", () => {
     Object.assign(new Error("unable to open database file"), { code: "SQLITE_CANTOPEN" }),
   ])("warns without exiting for transient rejection %#", (error) => {
     emitUnhandled(error);
-    expectNoExit();
-    expectLog(warnSpy, "Non-fatal unhandled rejection (continuing):", error.message);
+    expect(exitCalls).toEqual([]);
+    expect(restoreRuntimeTerminalStateMock).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[openclaw] Non-fatal unhandled rejection (continuing):",
+      expect.stringContaining(error.message),
+    );
     expect(errorSpy).not.toHaveBeenCalled();
   });
 
   it("suppresses cancellation without exiting", () => {
     emitUnhandled(Object.assign(new Error("This operation was aborted"), { name: "AbortError" }));
-    expectNoExit();
-    expectLog(warnSpy, "Suppressed AbortError:", "This operation was aborted");
+    expect(exitCalls).toEqual([]);
+    expect(restoreRuntimeTerminalStateMock).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[openclaw] Suppressed AbortError:",
+      expect.stringContaining("This operation was aborted"),
+    );
   });
 
   it("shares registrations across module copies but separates exception handlers", async () => {
     vi.resetModules();
     const copy = await import("./unhandled-rejections.js");
+    expect(copy.registerUnhandledRejectionHandler).not.toBe(registerUnhandledRejectionHandler);
     const error = new Error("registry input");
     const handler = vi.fn(() => true);
     const other = vi.fn(() => true);
@@ -121,14 +133,14 @@ describe("process error handlers", () => {
       rejectionListener(error, Promise.resolve());
       expect(handler.mock.calls).toEqual([[error]]);
       expect(other).not.toHaveBeenCalled();
-      expect(exitSpy).not.toHaveBeenCalled();
+      expect(exitCalls).toEqual([]);
       duplicateDispose();
       rejectionListener(error, Promise.resolve());
       expect(handler).toHaveBeenCalledTimes(1);
       expect(other).not.toHaveBeenCalled();
       expect(await waitForCliSignalExit()).toBe(1);
       expect(process.exitCode).toBe(1);
-      expect(exitSpy).not.toHaveBeenCalled();
+      expect(exitCalls).toEqual([]);
     } finally {
       dispose();
       duplicateDispose();
@@ -138,34 +150,61 @@ describe("process error handlers", () => {
 
   it("continues past declining and throwing handlers, then stops at the first claim", () => {
     const error = new Error("registry input");
-    const thrown = [new Error("stack detail"), { detail: "non-Error" }];
+    const withoutStack = new Error("message fallback");
+    delete withoutStack.stack;
+    // Bun can materialize a bare "Error" header during GC that drops the message
+    // from the stack; the reporter must still name the failure.
+    const bareHeader = Object.assign(new Error("bare header message"), {
+      stack: "Error\n    at handlerThatThrew (source.js:3)",
+    });
+    const thrown = [new Error("stack detail"), withoutStack, bareHeader, { detail: "non-Error" }];
     const calls: string[] = [];
-    const disposers: Array<() => void> = [];
-    const register = (label: string, handler: () => boolean) =>
+    const disposers = [
+      registerUnhandledRejectionHandler((value) => {
+        expect(value).toBe(error);
+        calls.push("false");
+        return false;
+      }),
+    ];
+    try {
+      for (const [index, failure] of thrown.entries()) {
+        disposers.push(
+          registerUnhandledRejectionHandler((value) => {
+            expect(value).toBe(error);
+            calls.push(`throw-${index}`);
+            // oxlint-disable-next-line typescript/only-throw-error -- Exercise non-Error throws from registered handlers.
+            throw failure;
+          }),
+        );
+      }
       disposers.push(
         registerUnhandledRejectionHandler((value) => {
           expect(value).toBe(error);
-          calls.push(label);
-          return handler();
+          calls.push("handled");
+          return true;
         }),
       );
-    register("false", () => false);
-    try {
-      for (const [index, failure] of thrown.entries()) {
-        register(`throw-${index}`, () => {
-          // oxlint-disable-next-line typescript/only-throw-error -- Exercise non-Error throws from registered handlers.
-          throw failure;
-        });
-      }
-      register("handled", () => true);
-      register("unreached", () => true);
+      disposers.push(
+        registerUnhandledRejectionHandler(() => {
+          calls.push("unreached");
+          return true;
+        }),
+      );
       rejectionListener(error, Promise.resolve());
-      expect(calls).toEqual(["false", "throw-0", "throw-1", "handled"]);
-      expect(errorSpy.mock.calls.map(([, detail]) => detail)).toEqual([
-        expect.stringContaining("stack detail"),
-        { detail: "non-Error" },
+      expect(calls).toEqual(["false", "throw-0", "throw-1", "throw-2", "throw-3", "handled"]);
+      expect(errorSpy.mock.calls).toEqual([
+        [
+          "[openclaw] Unhandled rejection handler failed:",
+          expect.stringMatching(/^Error: stack detail\n/),
+        ],
+        ["[openclaw] Unhandled rejection handler failed:", "message fallback"],
+        [
+          "[openclaw] Unhandled rejection handler failed:",
+          "Error: bare header message\n    at handlerThatThrew (source.js:3)",
+        ],
+        ["[openclaw] Unhandled rejection handler failed:", { detail: "non-Error" }],
       ]);
-      expect(exitSpy).not.toHaveBeenCalled();
+      expect(exitCalls).toEqual([]);
     } finally {
       for (const dispose of disposers) {
         dispose();

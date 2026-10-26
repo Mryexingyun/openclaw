@@ -68,7 +68,9 @@ it("retains committed success and delivers later observers when a notification t
   const seen: unknown[] = [];
   const result = transaction(() => {
     write("committed");
-    deferSqlitePostCommitPublication(database, () => fail("notification unavailable"));
+    deferSqlitePostCommitPublication(database, () => {
+      throw new Error("notification unavailable");
+    });
     deferSqlitePostCommitPublication(database, () => seen.push(rows()));
     return "saved";
   });
