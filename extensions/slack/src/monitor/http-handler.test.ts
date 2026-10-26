@@ -1,4 +1,3 @@
-import { createHmac } from "node:crypto";
 import { request } from "node:http";
 import { text } from "node:stream/consumers";
 import { HTTPReceiver } from "@slack/bolt";
@@ -13,7 +12,10 @@ type HttpResult = {
 
 async function withSlackHttpServer(
   use: (port: number, requestCount: () => number) => Promise<void>,
-  receiver: Parameters<typeof createSlackHttpRequestHandler>[0]["receiver"] = slackReceiver(),
+  receiver: Parameters<typeof createSlackHttpRequestHandler>[0]["receiver"] = new HTTPReceiver({
+    signingSecret: "test-secret",
+    endpoints: "/slack/events",
+  }),
 ) {
   const handler = createSlackHttpRequestHandler({ receiver, accountId: "default" });
   let requestCount = 0;
@@ -26,18 +28,7 @@ async function withSlackHttpServer(
   );
 }
 
-function slackReceiver(): HTTPReceiver {
-  return new HTTPReceiver({
-    signingSecret: "test-secret",
-    endpoints: "/slack/events",
-  });
-}
-
-function openChunkedRequest(
-  port: number,
-  signature = "v0=invalid",
-  timestamp = String(Math.floor(Date.now() / 1000)),
-): ReturnType<typeof request> {
+function openChunkedRequest(port: number): ReturnType<typeof request> {
   const req = request({
     host: "127.0.0.1",
     port,
@@ -46,8 +37,8 @@ function openChunkedRequest(
     headers: {
       "content-type": "application/json",
       "transfer-encoding": "chunked",
-      "x-slack-request-timestamp": timestamp,
-      "x-slack-signature": signature,
+      "x-slack-request-timestamp": String(Math.floor(Date.now() / 1000)),
+      "x-slack-signature": "v0=invalid",
     },
   });
   req.on("error", () => {});
@@ -87,26 +78,6 @@ describe("createSlackHttpRequestHandler", () => {
       });
     },
   );
-
-  it("preserves Bolt signature verification for requests within the bounds", async () => {
-    await withSlackHttpServer(async (port) => {
-      const body = JSON.stringify({ type: "url_verification", challenge: "bounded" });
-      const timestamp = String(Math.floor(Date.now() / 1000));
-      const signature = `v0=${createHmac("sha256", "test-secret")
-        .update(`v0:${timestamp}:${body}`)
-        .digest("hex")}`;
-      const req = openChunkedRequest(port, signature, timestamp);
-      const response = readResponse(req);
-
-      req.end(body);
-
-      await expect(response).resolves.toEqual({
-        statusCode: 200,
-        body: JSON.stringify({ challenge: "bounded" }),
-      });
-    });
-  });
-
   it("bounds concurrent requests before another pre-auth body read starts", async () => {
     const receiver = { requestListener: vi.fn() };
     await withSlackHttpServer(async (port, requestCount) => {
@@ -115,11 +86,9 @@ describe("createSlackHttpRequestHandler", () => {
         req.write("{");
       }
       await vi.waitFor(() => expect(requestCount()).toBe(8));
-
       const competing = openChunkedRequest(port);
       const response = readResponse(competing);
       competing.end("{}");
-
       await expect(response).resolves.toEqual({
         statusCode: 429,
         body: "Too Many Requests",

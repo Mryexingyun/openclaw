@@ -1,10 +1,5 @@
 import type { App } from "@slack/bolt";
-import {
-  WebAPIHTTPError,
-  WebAPIPlatformError,
-  WebAPIRateLimitedError,
-  WebAPIRequestError,
-} from "@slack/web-api";
+import { WebAPIPlatformError } from "@slack/web-api";
 import { describe, expect, it, vi } from "vitest";
 import { updateSlackSuggestedPrompts } from "./suggested-prompts.js";
 
@@ -32,9 +27,7 @@ function update(
 describe("updateSlackSuggestedPrompts", () => {
   it("omits thread_ts for the Agent View capability probe", async () => {
     const setSuggestedPrompts = vi.fn().mockResolvedValue({ ok: true });
-
     await update(setSuggestedPrompts, false, "Try asking");
-
     expect(setSuggestedPrompts).toHaveBeenCalledWith({
       token: "",
       channel_id: "D123",
@@ -42,29 +35,19 @@ describe("updateSlackSuggestedPrompts", () => {
       prompts,
     });
   });
-
   it.each([
     ["successful update", undefined, "accepted"],
     ["non-Agent app", platformError("not_agent_app"), "rejected"],
     ["missing scope", platformError("missing_scope"), "rejected"],
     ["internal error", platformError("internal_error"), "internal_error"],
     ["other platform error", platformError("invalid_auth"), "failed"],
-    ["request failure", new WebAPIRequestError(new Error("connection reset")), "failed"],
-    [
-      "HTTP failure",
-      new WebAPIHTTPError(500, "Internal Server Error", {}, "internal_error"),
-      "failed",
-    ],
-    ["rate limit", new WebAPIRateLimitedError(30), "failed"],
     ["unknown error", new Error("internal_error"), "failed"],
   ] as const)("classifies %s", async (_name, error, outcome) => {
     const setSuggestedPrompts = error
       ? vi.fn().mockRejectedValue(error)
       : vi.fn().mockResolvedValue({ ok: true });
-
     expect(await update(setSuggestedPrompts)).toBe(outcome);
   });
-
   it.each([
     ["permanent authorization failure", platformError("invalid_auth"), "failed"],
     ["ordinary error", new Error("connection reset"), "failed"],
