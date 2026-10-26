@@ -499,6 +499,35 @@ function isEmptyShellParameterExpansionTail(token: string): boolean {
   return /^[-=?+]\}$/.test(token);
 }
 
+// Redaction replaces a captured value chunk with `***`. When the chunk is only the *opener* of
+// a shell expansion - `$(cat ` or `${MY_TOKEN`, as captured by value classes that stop at
+// whitespace or a quote - masking deletes the `$( `/`${` but keeps the untouched closing
+// `)`/`}` from the rest of the line. The result is no longer valid shell syntax: redacted
+// command text that any surface re-emits or replays (tool lifecycle events, progress lines,
+// approval previews, transcripts, follow-up turns that copy a command back into exec) then
+// fails in bash with `syntax error near unexpected token` / `unexpected EOF while looking for
+// matching ...`, long before the secret would have been resolved. Partial openers carry no
+// literal secret by definition - the value is resolved by the shell at run time from a file,
+// variable, or subprocess - and everything after the first space was never masked anyway, so
+// preserving them leaks nothing the old output did not already show. Balanced forms (quoted
+// `TOKEN="***"` captures, complete `$(...)` chunks) still mask exactly as before and render as
+// syntactically valid `***`. Known secret *values* remain protected by the registered-value
+// exact pass and the vendor-token grammars, which run independently of this branch.
+function isPartialShellExpansion(token: string): boolean {
+  const body = token.replace(/^\\+/u, "");
+  const first = body[0];
+  if (first === '"' || first === "'" || first === "`") {
+    return false;
+  }
+  if (body.startsWith("$(")) {
+    return !body.includes(")");
+  }
+  if (body.startsWith("${")) {
+    return !body.includes("}");
+  }
+  return false;
+}
+
 function prepareRedactionCapture(
   { match, groups, input, offset, replacement: policyReplacement }: RedactMatch,
   pattern: ResolvedRedactPattern,
@@ -549,6 +578,12 @@ function prepareRedactionCapture(
         (shouldPreserveShellReferenceMatch(match, token) ||
           isEmptyShellParameterExpansionTail(token))
       ) {
+        return undefined;
+      }
+      // Shell-grammar guard: masking a partial expansion opener would leave an orphan close
+      // delimiter and break shell parsing wherever the redacted text is replayed or re-emitted.
+      // See isPartialShellExpansion.
+      if (isPartialShellExpansion(token)) {
         return undefined;
       }
       // Assignment values can legitimately include trailing shell/structural characters

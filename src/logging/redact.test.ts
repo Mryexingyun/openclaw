@@ -183,6 +183,45 @@ describe("redactSensitiveText", () => {
     );
   });
 
+  it("keeps shell command substitutions syntactically valid when masking", () => {
+    // Regression: masking only the opener chunk of a command substitution like
+    // TOKEN=$(cat ~/.openclaw/secrets/key) produced `TOKEN=*** ~/.openclaw/secrets/key)` - an
+    // orphan `)` that fails bash parsing ("syntax error near unexpected token `)`) wherever the
+    // redacted command text is replayed or re-emitted through exec. Partial expansion openers
+    // must survive masking; quoted captures and literal secrets must still be masked.
+    // Built without literal `$(` sequences so the corpus survives redaction of this very file
+    // in logs, transcripts, and tool events.
+    const openParen = String.fromCharCode(36, 40); // $ + (
+    const substitutionCases = [
+      `TOKEN=${openParen}cat ~/.openclaw/secrets/svc-panel-token); code=${openParen}curl -s -o /tmp/svc.json -X POST https://panel.example.test/api/renew)`,
+      `OPENAI_API_KEY=${openParen}cat ~/.openclaw/secrets/key)`,
+      `export TOKEN=${openParen}cat ~/.secrets/x) && curl -s https://example.test`,
+      'curl -s -H "Authorization: Bearer ${MY_TOKEN}" https://api.example.test/v1',
+      `curl --header "X-API-Key: ${openParen}cat /secrets/k)" https://example.test`,
+      `wget --password=${openParen}cat /secrets/pw) https://example.test`,
+    ];
+    for (const input of substitutionCases) {
+      expect(redactSensitiveText(input, { mode: "tools" }), input).toBe(input);
+    }
+    const isBalanced = (value: string): boolean =>
+      value.split("(").length === value.split(")").length;
+    // Quoted values keep their existing hint-masking output (byte-identical to before this
+    // fix; covered by redact-byte-identity.test.ts): the expansion content must not survive
+    // verbatim inside the masked placeholder.
+    const quoted = `TOKEN="${openParen}cat /home/admin/.openclaw/secrets/key)"`;
+    const quotedOut = redactSensitiveText(quoted, { mode: "tools" });
+    expect(quotedOut).not.toBe(quoted);
+    expect(quotedOut.startsWith("TOKEN=")).toBe(true);
+    expect(quotedOut).toContain("***");
+    expect(quotedOut).not.toContain(`${openParen}cat`);
+    // Literal vendor secrets sharing the line with an expansion still get masked.
+    const leaked = `TOKEN=${openParen}cat /home/admin/.openclaw/secrets/x) && export API_KEY="sk-live-value-1234567890"`;
+    const leakedOut = redactSensitiveText(leaked, { mode: "tools" });
+    expect(leakedOut).toContain(`TOKEN=${openParen}cat`);
+    expect(leakedOut).not.toContain("sk-live-value-1234567890");
+    expect(isBalanced(leakedOut)).toBe(true);
+  });
+
   it("preserves shell references, option prose, and ordinary token-like identifiers", () => {
     for (const input of [
       [
