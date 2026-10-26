@@ -1,11 +1,134 @@
+import { createHash } from "node:crypto";
 import { setImmediate as nextTurn } from "node:timers/promises";
 import { queryObjects } from "node:v8";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
+import renderShape from "../benchmarks/render-shape.json" with { type: "json" };
 import {
   PROMETHEUS_FAMILY_RESERVES,
   type PrometheusMetricName,
 } from "./prometheus-family-budget.js";
+import * as prometheusFormat from "./prometheus-format.js";
 import { createPrometheusMetricStore } from "./prometheus-metric-store.js";
+
+it("preserves the observed registry's golden exposition across cold and warm scrapes", () => {
+  const store = createPrometheusMetricStore();
+  for (const { name, labelSets, finiteBuckets } of renderShape.histograms) {
+    for (let index = 0; index < labelSets; index++) {
+      store.histogram(
+        name as PrometheusMetricName,
+        "Synthetic histogram",
+        { kind: `kind-${index % 8}`, worker_slot: String(index) },
+        0.005 * ((index % 17) + 1),
+        finiteBuckets,
+      );
+    }
+  }
+  for (const { name, labelSets, type } of renderShape.scalars) {
+    for (let index = 0; index < labelSets; index++) {
+      store[type === "counter" ? "counter" : "gauge"](
+        name as PrometheusMetricName,
+        "Synthetic scalar",
+        { kind: `kind-${index % 8}`, worker_slot: String(index) },
+        index + 1,
+      );
+    }
+  }
+  // Captured from the pre-optimization owner benchmark: 4,628 series / 60,154 rows.
+  for (let scrape = 0; scrape < 2; scrape++) {
+    const rendered = store.render();
+    expect(rendered.length).toBe(5278020);
+    expect(createHash("sha256").update(rendered).digest("hex")).toBe(
+      "8bca72cac3d5f446991fa7c930ee2f81d56ec23d4f4afba9c4b514feb8a71cce",
+    );
+    rendered.buffer.transfer(0);
+  }
+});
+
+it("formats unchanged family headers once across interleaved scrapes and value updates", () => {
+  const first = createPrometheusMetricStore();
+  const second = createPrometheusMetricStore();
+  first.counter("openclaw_run_completed_total", "Runs.", { worker: "z" });
+  first.gauge("openclaw_worker_queue_depth", "Runs.", {}, 1);
+  first.histogram("openclaw_run_duration_seconds", "Duration.", {}, 0.5, [1]);
+  second.counter("openclaw_run_completed_total", "Other runs.", {});
+  const format = vi.spyOn(prometheusFormat, "escapeHelp");
+  try {
+    expect(first.render().toString()).toContain(
+      "# HELP openclaw_worker_queue_depth Runs.\n# TYPE openclaw_worker_queue_depth gauge\n",
+    );
+    second.render();
+    expect(format).toHaveBeenCalledTimes(4);
+    format.mockClear();
+
+    first.counter("openclaw_run_completed_total", "Ignored replacement help.", { worker: "z" });
+    first.gauge("openclaw_worker_queue_depth", "Runs.", {}, 2);
+    first.histogram("openclaw_run_duration_seconds", "Duration.", {}, 0.5, [1]);
+    first.render();
+    second.render();
+    first.render();
+    expect(format).not.toHaveBeenCalled();
+
+    // A newly admitted series can sort ahead of the previous header owner.
+    first.counter("openclaw_run_completed_total", "Earlier runs.\n", { worker: "a" });
+    format.mockClear();
+    expect(first.render().toString()).toContain(
+      "# HELP openclaw_run_completed_total Earlier runs.\\n\n",
+    );
+    expect(format).toHaveBeenCalledTimes(1);
+    format.mockClear();
+    expect(second.render().toString()).toContain(
+      "# HELP openclaw_run_completed_total Other runs.\n",
+    );
+    first.render();
+    expect(format).not.toHaveBeenCalled();
+  } finally {
+    format.mockRestore();
+  }
+});
+
+it("selects header help and type after gauge removal, cross-type admission, and reset", () => {
+  const store = createPrometheusMetricStore();
+  const name = "openclaw_run_duration_seconds";
+  const header = (help: string, type: string) => `# HELP ${name} ${help}\n# TYPE ${name} ${type}\n`;
+  store.histogram(name, "Duration.", {}, 0.5, [1]);
+  expect(store.render().toString()).toContain(header("Duration.", "histogram"));
+  store.gauge(name, "Duration.", {}, 2);
+  expect(store.render().toString()).toContain(header("Duration.", "gauge"));
+  store.clearGauges(name);
+  expect(store.render().toString()).toContain(header("Duration.", "histogram"));
+  store.counter(name, "Duration.", {}, 3);
+  expect(store.render().toString()).toContain(header("Duration.", "counter"));
+  store.reset();
+  expect(store.render().length).toBe(0);
+  store.gauge(name, "Restarted duration.", {}, 4);
+  expect(store.render().toString()).toBe(`${header("Restarted duration.", "gauge")}${name} 4\n`);
+});
+
+it("formats unchanged series only once across interleaved scrapes and updates", () => {
+  const first = createPrometheusMetricStore();
+  const second = createPrometheusMetricStore();
+  first.histogram("openclaw_run_duration_seconds", "Duration.", {}, 0.015, [1]);
+  second.histogram("openclaw_run_duration_seconds", "Duration.", {}, 0.025, [1]);
+  first.gauge("openclaw_worker_queue_depth", "Depth.", {}, 0.125);
+  const format = vi.spyOn(Number.prototype, "toPrecision");
+  try {
+    first.render();
+    second.render();
+    expect(format).toHaveBeenCalledTimes(3);
+    format.mockClear();
+    first.gauge("openclaw_worker_queue_depth", "Depth.", {}, 0.125);
+    first.render();
+    second.render();
+    expect(format).not.toHaveBeenCalled();
+
+    first.histogram("openclaw_run_duration_seconds", "Duration.", {}, 0.02, [1]);
+    expect(first.render().toString()).toContain("openclaw_run_duration_seconds_sum 0.035\n");
+    expect(second.render().toString()).toContain("openclaw_run_duration_seconds_sum 0.025\n");
+    expect(format).toHaveBeenCalledTimes(1);
+  } finally {
+    format.mockRestore();
+  }
+});
 
 it("keeps earlier scrape bytes stable across value changes, gauge removal, and reset", () => {
   const store = createPrometheusMetricStore();
@@ -37,6 +160,18 @@ it("keeps earlier scrape bytes stable across value changes, gauge removal, and r
   );
   expect(updated).toContain(
     'openclaw_run_duration_seconds_sum{a="first",le="replaced",z="雪\\"\\\\\\n"} 2.5\n',
+  );
+  for (const value of [12345, -1234, 7]) {
+    store.gauge("openclaw_worker_queue_depth", "Depth.", {}, value);
+    const rendered = store.render();
+    expect(rendered.toString()).toContain(`openclaw_worker_queue_depth ${value}\n`);
+    rendered.buffer.transfer(0);
+  }
+  for (let index = 0; index < 8; index++) {
+    store.histogram("openclaw_run_duration_seconds", "Duration.", labels, 1, [1, 10]);
+  }
+  expect(store.render().toString()).toContain(
+    'openclaw_run_duration_seconds_count{a="first",le="replaced",z="雪\\"\\\\\\n"} 10\n',
   );
   const largeLabel = "雪😀".repeat(1024);
   store.gauge("openclaw_worker_queue_depth", "Depth.", { label: largeLabel }, 7);
