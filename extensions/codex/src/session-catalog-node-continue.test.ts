@@ -39,9 +39,8 @@ import {
 
 const nodeSourceHomeId = "a".repeat(64);
 const payload = (value: unknown) => ({ payloadJSON: JSON.stringify(value) });
-const nodePage = (sessions: unknown[]) => ({
-  payloadJSON: JSON.stringify({ sourceHomeId: nodeSourceHomeId, canContinueCodex: true, sessions }),
-});
+const nodePage = (sessions: unknown[]) =>
+  payload({ sourceHomeId: nodeSourceHomeId, canContinueCodex: true, sessions });
 const nodeSession = (threadId: string, fields: Record<string, unknown> = {}) => ({
   threadId,
   name: "Remote task",
@@ -318,27 +317,24 @@ it("builds local and paired-node terminal plans from verified catalog records", 
   let now = Date.now();
   vi.spyOn(Date, "now").mockImplementation(() => now);
   const executable = path.join(binDir, process.platform === "win32" ? "codex.cmd" : "codex");
+  const localSession = {
+    threadId,
+    status: "active",
+    source: "cli",
+    cwd: "/workspace/local",
+    archived: false,
+    fallbackName: "Readable fallback",
+  } as const;
   const control = createEligibleControl({
     requireEligibleThread: vi.fn(async () =>
       idleThread({
         id: threadId,
         status: { type: "active" },
-        source: "cli",
-        cwd: "/workspace/local",
+        source: localSession.source,
+        cwd: localSession.cwd,
       }),
     ),
-    listPage: vi.fn(async () => ({
-      sessions: [
-        {
-          threadId,
-          status: "active",
-          source: "cli",
-          cwd: "/workspace/local",
-          archived: false,
-          fallbackName: "Readable fallback",
-        },
-      ],
-    })),
+    listPage: vi.fn(async () => ({ sessions: [localSession] })),
   });
   // A title search cannot locate this thread by ID.
   const invoke = vi.fn<PluginRuntime["nodes"]["invoke"]>(async (request) =>
@@ -362,10 +358,7 @@ it("builds local and paired-node terminal plans from verified catalog records", 
     createCodexSessionCatalogNodeInvokePolicies().flatMap((policy) => policy.commands),
   );
   expect(authorizedCommands).toContain(CODEX_TERMINAL_RESUME_COMMAND);
-  const policy = createCodexSessionCatalogNodeInvokePolicies()[0];
-  if (!policy) {
-    throw new Error("expected Codex node invoke policy");
-  }
+  const policy = createCodexSessionCatalogNodeInvokePolicies()[0]!;
   const invokeNode = vi.fn(async () => ({ ok: true as const, payload: "listed" }));
   expect(policy.handle({ command: CODEX_TERMINAL_RESUME_COMMAND, invokeNode } as never)).toEqual({
     ok: true,

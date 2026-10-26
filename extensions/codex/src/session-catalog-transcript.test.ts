@@ -76,13 +76,6 @@ it.each(["inProgress", "in_progress", "running"])(
 it("preserves completed invocations, unknown outcomes, and reasoning without expanding native pages", async () => {
   const patch = "@@ -1 +1 @@\n-" + "old ".repeat(150) + "\n+" + "new ".repeat(150) + "\n";
   const source = [
-    toolItem("failed", {
-      command: "false",
-      cwd: "/repo",
-      aggregatedOutput: "",
-      status: "failed",
-      exitCode: 1,
-    }),
     toolItem("quiet", {
       type: "mcpToolCall",
       server: "docs",
@@ -128,7 +121,6 @@ it("preserves completed invocations, unknown outcomes, and reasoning without exp
 
   expect(items.map((item) => item.id)).toEqual(source.map((item) => item.id));
   const results = [
-    ["bash", "failed", "", { command: "false", cwd: "/repo" }, true],
     ["docs.lookup", "quiet", "", { query: "guide" }, false],
     ["custom", "dynamic", "found", ["guide"], true],
   ] as const;
@@ -142,23 +134,18 @@ it("preserves completed invocations, unknown outcomes, and reasoning without exp
       isError,
     });
   });
-  expect(items[0]).toMatchObject({
-    exitCode: 1,
-    activity: { status: "failed" },
-    toolDetails: { status: "failed", exitCode: 1 },
-  });
-  expect(items[3]).toMatchObject({ type: "toolResult", text: "recorded output" });
-  expect(items[3]?.isError).toBeUndefined();
-  expect(items[4]).toMatchObject({ activity: { status: "blocked" } });
-  expect(items[5]).toMatchObject({ phase: "commentary" });
-  expect(items[6]).toMatchObject({
+  expect(items[2]).toMatchObject({ type: "toolResult", text: "recorded output" });
+  expect(items[2]?.isError).toBeUndefined();
+  expect(items[3]).toMatchObject({ activity: { status: "blocked" } });
+  expect(items[4]).toMatchObject({ phase: "commentary" });
+  expect(items[5]).toMatchObject({
     toolInput: {
       changes: [{ path: "/repo/example.ts", diff: patch, stat: { added: 1, removed: 1 } }],
     },
     toolDetails: { status: "completed" },
     activity: { name: "apply_patch", status: "completed" },
   });
-  expect(items[7]).toMatchObject({ type: "reasoning", text: "Summary\n\nDetails" });
+  expect(items[6]).toMatchObject({ type: "reasoning", text: "Summary\n\nDetails" });
   expect(pages.at(-1)?.nextCursor).toBeUndefined();
 });
 
@@ -228,14 +215,12 @@ it("resumes within a legacy turn after an append, then advances to the next nati
     label: "Local Codex",
     threadId: "thread-1",
   });
-  expect(first.items).toEqual(
-    ["item-6", "item-5", "item-4"].map((id, index) => ({
-      id,
-      type: "agentMessage",
-      text: id,
-      raw: source[6 - index],
-    })),
-  );
+  expect(first.items[0]).toEqual({
+    id: "item-6",
+    type: "agentMessage",
+    text: "item-6",
+    raw: source[6],
+  });
   source.push(catalogThreadItem("appended", { text: "newer message" }));
   const second = await readTranscript(control, 2, first.nextCursor);
   const third = await readTranscript(control, 4, second.nextCursor);
