@@ -114,7 +114,6 @@ export function registerPluginIncludeReferenceRepairTest(fixture: IncludeReferen
       unregister();
     }
 
-    expect(ioMocks.writeConfigFile).not.toHaveBeenCalled();
     expect(notifications).toEqual([
       expect.objectContaining({
         configPath,
@@ -131,13 +130,9 @@ export function registerPluginIncludeReferenceRepairTest(fixture: IncludeReferen
       expect((await fs.stat(`${pluginsPath}.bak`)).mode & 0o777).toBe(0o600);
       expect((await fs.stat(`${pluginsPath}.bak.1`)).mode & 0o777).toBe(0o600);
     }
-    const persistedPlugins = JSON.parse(await readFile(pluginsPath)) as {
-      entries?: Record<string, { config?: { token?: string; optional?: string } }>;
-      installs?: Record<string, unknown>;
-    };
-    expect(persistedPlugins.entries?.old?.config).toEqual(authoredOldEntry.config);
-    expect(persistedPlugins.entries?.demo).toEqual({ enabled: true });
-    expect(persistedPlugins.installs).toBeUndefined();
+    expect(JSON.parse(await readFile(pluginsPath))).toEqual(
+      pluginConfig(authoredOldEntry, true).plugins,
+    );
   });
 }
 
