@@ -23,6 +23,7 @@ import {
 } from "../../state/openclaw-state-db.paths.js";
 import { captureOpenClawStateReadWorkerContext } from "../../state/openclaw-state-worker-context.js";
 import type { OpenClawConfig } from "../types.js";
+import type { SessionColdBatchInput } from "./session-accessor.sqlite-archive-types.js";
 import {
   prepareSqliteColdArchiveBatch,
   runSqliteTranscriptArchiveWorkerOperation,
@@ -43,7 +44,6 @@ import { withSqliteMutationWorkerLifetime } from "./session-accessor.sqlite-work
 import { captureSessionActorStorageOwner } from "./session-actor-storage-binding.js";
 import type { SessionColdRestorationGuard } from "./session-cold-storage-guard.types.js";
 import type { SessionColdReadPreparation } from "./session-cold-storage-read.js";
-import type { SessionColdBatchInput } from "./session-cold-storage-selection.js";
 import { prepareSessionColdStorageTargets } from "./session-cold-storage-targets.js";
 import type {
   SessionColdMutationPlan,
