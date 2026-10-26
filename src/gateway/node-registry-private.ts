@@ -114,18 +114,16 @@ type NodeRegistryPrivateContext = {
   closeHostStats: () => Promise<void>;
 };
 
-type GenerationBoundPendingInvoke = {
-  expectedGeneration: string;
-  controller: AbortController;
-};
-
 type NodeRegistryPrivateState = {
   context: NodeRegistryPrivateContext;
   catalogRevision: number;
   runnerInventoryByConn: Map<string, NodeRunnerInventoryRecord>;
   bundleStatusByConn: Map<string, NodeWorkerBundleStatusObservation>;
   runnerState: NodeRunnerStatePublisher;
-  generationBoundInvokes: WeakMap<PendingInvoke, GenerationBoundPendingInvoke>;
+  generationBoundInvokes: WeakMap<
+    PendingInvoke,
+    { expectedGeneration: string; controller: AbortController }
+  >;
   workerSupervisorTransport: NodeWorkerSupervisorTransport;
 };
 
@@ -545,7 +543,9 @@ export function createNodeRegistryRuntime<TRegistry extends object>(create: () =
 }
 
 /** Private session-host transport, retaining registry-owned pairing and connection checks. */
-export function getNodeWorkerSupervisorTransport(nodeRegistry: object) {
+export function getNodeWorkerSupervisorTransport(
+  nodeRegistry: object,
+): NodeWorkerSupervisorTransport {
   return requireNodeRegistryPrivateState(nodeRegistry).workerSupervisorTransport;
 }
 
