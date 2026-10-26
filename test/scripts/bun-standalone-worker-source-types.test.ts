@@ -2,6 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { rewriteStandaloneImports } from "../../scripts/lib/bun-standalone-imports.mjs";
+import { createStandaloneSourceGlobals } from "../../scripts/lib/bun-standalone-source-globals.mjs";
 import { createStandaloneSourceParser } from "../../scripts/lib/bun-standalone-source-parser.mjs";
 import { createStandaloneSourceTransforms } from "../../scripts/lib/bun-standalone-source-transforms.mjs";
 import { collectNativeTypeScriptDiagnostics } from "../../scripts/lib/native-typescript-diagnostics.mts";
@@ -9,6 +11,43 @@ import { createNativeTypeScriptProject } from "../../scripts/lib/native-typescri
 import { createWorkerDeployBuildPlugin } from "../../scripts/lib/worker-deploy-build-plugin.mts";
 
 describe("standalone worker source types", () => {
+  it("preserves the Knowledge worker SDK resolver after image namespace rewriting", () => {
+    const sourceRoot = path.resolve(import.meta.dirname, "../..");
+    const filename = path.join(sourceRoot, "extensions/knowledge/src/worker-sdk-resolver.ts");
+    const transformed = rewriteStandaloneImports({
+      contents: fs.readFileSync(filename, "utf8"),
+      filename,
+      runtimeRoot: sourceRoot,
+      embeddedPaths: {},
+      moduleAliases: {},
+      workerThreadsShim: "",
+      parse: createStandaloneSourceParser(),
+      preserveTypes: true,
+    });
+    using session = createNativeTypeScriptProject({
+      cwd: sourceRoot,
+      configFileName: "tsconfig.json",
+      files: {
+        "tsconfig.json": JSON.stringify({
+          compilerOptions: {
+            strict: true,
+            noEmit: true,
+            module: "nodenext",
+            target: "esnext",
+            types: ["node"],
+            skipLibCheck: true,
+          },
+          files: ["worker.ts", "globals.d.ts", "consumer.ts"],
+        }),
+        "package.json": '{"type":"module"}',
+        "worker.ts": transformed,
+        "globals.d.ts": createStandaloneSourceGlobals(),
+        "consumer.ts": `import {installWorkerSdkResolver} from "./worker.js"; installWorkerSdkResolver({"openclaw/plugin-sdk/example": "file:///runtime/example.js"});`,
+      },
+    });
+    expect(collectNativeTypeScriptDiagnostics(session.project)).toEqual([]);
+  });
+
   it("retains the Gateway transport types through the portable worker transform", async () => {
     const sourceRoot = path.resolve(import.meta.dirname, "../..");
     const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), "standalone-worker-types-"));
