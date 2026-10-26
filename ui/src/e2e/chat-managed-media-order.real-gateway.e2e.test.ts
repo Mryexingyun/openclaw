@@ -463,8 +463,19 @@ async function runManagedMediaScenario() {
           )
           .toEqual([true, true]);
       };
-      // Read persisted history through its real owner, never pre-seed ordered content.
-      const history = await callGateway("chat.history", { sessionKey, limit: 20 });
+      // Text can settle before managed media; wait for the real history projection.
+      let history: Awaited<ReturnType<typeof callGateway>>;
+      await expect
+        .poll(async () => {
+          history = await callGateway("chat.history", { sessionKey, limit: 20 });
+          const messages = Array.isArray(history?.messages) ? history.messages : [];
+          const assistant = messages
+            .map(asOptionalRecord)
+            .find((entry) => entry?.role === "assistant");
+          const content = Array.isArray(assistant?.content) ? assistant.content : [];
+          return content.filter((block) => asOptionalRecord(block)?.type === "image").length;
+        })
+        .toBe(2);
       const messages = Array.isArray(history?.messages) ? history.messages : [];
       const assistants = messages
         .map(asOptionalRecord)

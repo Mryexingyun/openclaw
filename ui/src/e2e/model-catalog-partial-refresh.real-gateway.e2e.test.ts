@@ -56,6 +56,7 @@ const suite = createControlUiE2eSuite({
     );
     instance = await createOpenClawTestInstance({
       name: "partial-refresh",
+      gatewayToken: config.gateway.auth.token,
       env: {
         OPENCLAW_TEST_MINIMAL_GATEWAY: undefined,
         VITEST: undefined,
@@ -102,16 +103,17 @@ suite.define(() => {
     );
     await expect
       .poll(async () => {
-        if (catalog.pendingProviders?.length) {
+        if (!catalog.refreshFailed || catalog.pendingProviders?.length) {
           catalog = await client.request<ModelCatalogResult>(
             "models.list",
             { agentId: "main", view: "configured" },
             { timeoutMs: 30_000 },
           );
         }
-        return catalog.pendingProviders ?? [];
+        // An empty initial pending list is not a completed provider outcome.
+        return catalog.refreshFailed === true && !catalog.pendingProviders?.length;
       })
-      .toEqual([]);
+      .toBe(true);
     await fs.writeFile(
       path.join(suite.artifactDir, "models-list.json"),
       JSON.stringify(catalog, null, 2),
