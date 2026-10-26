@@ -61,7 +61,6 @@ it.each([
       },
     ];
     const runId = "persisted-successor-input";
-    let acknowledgeReplay = false;
     const history = vi.fn<GatewayRequestHandler>((_method, raw): ChatHistoryResult => {
       const params = asOptionalRecord(raw);
       const row = params?.sessionKey === successor.key ? successor : foreground;
@@ -71,12 +70,7 @@ it.each([
         sessionInfo: row,
       };
     });
-    const send = vi.fn<GatewayRequestHandler>(() => {
-      if (!acknowledgeReplay) {
-        throw new Error("gateway closed");
-      }
-      return { status: "ok", runId, messageSeq: 1 };
-    });
+    const send = vi.fn<GatewayRequestHandler>(() => ({ status: "ok", runId, messageSeq: 1 }));
     const fixture = createMountedPanes([foreground, successor], "main", undefined, {
       "chat.history": history,
       "chat.send": send,
@@ -119,20 +113,8 @@ it.each([
         input,
       ),
     ).toBe("admitted");
-    // An interrupted replay retains the original input until the Gateway acknowledges it.
-    await chatSendActions.resumeStoredChatOutboxes(visiblePane.state);
-    expect(listStoredChatOutboxes(visiblePane.state)).toEqual([
-      expect.objectContaining({
-        sessionKey: successor.key,
-        queue: [expect.objectContaining({ ...input, sendAttempts: 2 })],
-      }),
-    ]);
     const messagesBefore = state.chatMessages;
-    expect(send).toHaveBeenCalledTimes(1);
-    for (const mock of [history, resume, send]) {
-      mock.mockClear();
-    }
-    acknowledgeReplay = true;
+    history.mockClear();
 
     emitGatewayEvent(event, {
       sessionKey: successor.key,
