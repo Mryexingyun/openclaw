@@ -50,18 +50,18 @@ async function createDirectory(
   };
   const scope = await prepareConversationRegistryScope({ config, agentId });
   const routed = createDeferredCore();
+  vi.spyOn(channelResolution, "resolveOutboundChannelPlugin").mockImplementation(() => ({
+    ...createChannelTestPluginBase({ id: "reef" }),
+    directory: {
+      listPeers: async () =>
+        (params.peerIds ?? ["peer"]).map((id) => ({
+          kind: "user" as const,
+          id,
+          name: "Synthetic peer",
+        })),
+    },
+  }));
   const deps = {
-    resolveOutboundChannelPlugin: () => ({
-      ...createChannelTestPluginBase({ id: "reef" }),
-      directory: {
-        listPeers: async () =>
-          (params.peerIds ?? ["peer"]).map((id) => ({
-            kind: "user" as const,
-            id,
-            name: "Synthetic peer",
-          })),
-      },
-    }),
     resolveOutboundSessionRoute: async ({ target }: { target: string }) => {
       routed.resolve();
       return {
@@ -74,9 +74,6 @@ async function createDirectory(
       };
     },
   };
-  vi.spyOn(channelResolution, "resolveOutboundChannelPlugin").mockImplementation(
-    deps.resolveOutboundChannelPlugin,
-  );
   vi.spyOn(outboundSession, "resolveOutboundSessionRoute").mockImplementation((input) =>
     deps.resolveOutboundSessionRoute(input),
   );
