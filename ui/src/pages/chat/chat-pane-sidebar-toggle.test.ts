@@ -8,10 +8,10 @@ import { sidebarPanelDefinitions } from "./chat-pane-embedded-panels.ts";
 import { createChatPaneRails } from "./chat-pane-rails.ts";
 import {
   createPaneHeaderWorkspaceFixture,
-  createSessionCapabilityFixture,
   createTestChatPane,
   getPaneTestRuntime,
 } from "./chat-pane.test-support.ts";
+import { createSessionCapabilityFixture } from "./chat-session-capability.test-support.ts";
 import { isSidebarSlotVisible, openSlot } from "./sidebar-layout.ts";
 
 const panelCases = [

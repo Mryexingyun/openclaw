@@ -31,7 +31,6 @@ import { ChatPaneRuntime } from "./chat-pane-render.ts";
 import { consumePaneSessionHandoff } from "./chat-pane-shared.ts";
 import { subscribeChatPaneSnapshotInvalidation } from "./chat-pane-startup-subscriptions.ts";
 import {
-  createSessionCapabilityFixture,
   createTestChatPane,
   createPaneTestHost,
   getPaneTestRuntime,
@@ -39,6 +38,7 @@ import {
   nativeHistoryMessage,
   type TestChatPane,
 } from "./chat-pane.test-support.ts";
+import { createSessionCapabilityFixture } from "./chat-session-capability.test-support.ts";
 import type { ChatPageHost } from "./chat-state-host.ts";
 import { openSessionWorkspacePreview } from "./components/chat-session-workspace-state.ts";
 import type { SidebarContent } from "./components/chat-sidebar-content-types.ts";

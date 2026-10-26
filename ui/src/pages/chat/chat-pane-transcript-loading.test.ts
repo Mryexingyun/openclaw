@@ -13,6 +13,7 @@ import { syncSelectedSessionMessageSubscription } from "./chat-history-subscript
 import { loadChatHistory } from "./chat-history.ts";
 import { createRefreshChatPane, nativeHistoryMessage } from "./chat-pane-history.test-support.ts";
 import * as paneTest from "./chat-pane.test-support.ts";
+import { createSessionCapabilityFixture } from "./chat-session-capability.test-support.ts";
 
 it("automatically restores live observation after a subscription timeout without a composer error", async () => {
   vi.useFakeTimers();
@@ -69,7 +70,7 @@ it("reports each transcript loading edge from the load owner", async () => {
   const client = createGatewayBrowserClientFixture({ request: () => pending.shift() });
   const context = {
     ...createInitializationContext(),
-    sessions: paneTest.createSessionCapabilityFixture({
+    sessions: createSessionCapabilityFixture({
       state: { agentId: "main" },
       reconcile: vi.fn(),
     }),

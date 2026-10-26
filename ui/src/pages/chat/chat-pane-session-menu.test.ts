@@ -24,11 +24,11 @@ import { projectChatFields } from "./chat-field-projection.ts";
 import { createMountedPanes, refreshPane } from "./chat-pane-mounted.test-support.ts";
 import {
   createPaneHeaderWorkspaceFixture,
-  createSessionCapabilityFixture,
   createTestChatPane,
   getPaneTestRuntime,
   type TestChatPane,
 } from "./chat-pane.test-support.ts";
+import { createSessionCapabilityFixture } from "./chat-session-capability.test-support.ts";
 import { selectedChatSessionRow } from "./chat-state-route.ts";
 import { renderPaneHeaderInto } from "./components/chat-pane-header.test-support.ts";
 import { PaneHeaderView } from "./components/chat-pane-header.tsx";

@@ -19,11 +19,8 @@ import {
   createInitializationContext,
   createGatewayBrowserClientFixture,
 } from "../chat-application-context.test-support.ts";
-import {
-  activePlacementSession,
-  createSessionCapabilityFixture,
-  createTestChatPane,
-} from "../chat-pane.test-support.ts";
+import { activePlacementSession, createTestChatPane } from "../chat-pane.test-support.ts";
+import { createSessionCapabilityFixture } from "../chat-session-capability.test-support.ts";
 import * as chatThreadBuild from "../chat-thread-build.ts";
 import {
   buildCachedChatItems,

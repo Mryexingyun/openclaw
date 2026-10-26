@@ -21,12 +21,12 @@ import {
 } from "./chat-application-context.test-support.ts";
 import { ChatPaneRuntime } from "./chat-pane-render.ts";
 import {
-  createSessionCapabilityFixture,
   createPaneTestHost,
   getPaneTestRuntime,
   createTestChatPane,
   type TestChatPane,
 } from "./chat-pane.test-support.ts";
+import { createSessionCapabilityFixture } from "./chat-session-capability.test-support.ts";
 
 type AnnotationPane = TestChatPane & {
   receiveBrowserAnnotation: (event: Event) => void;

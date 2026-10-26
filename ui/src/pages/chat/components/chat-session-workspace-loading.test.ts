@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../../../test/helpers/promise.js";
 import type { SessionWorkspaceListResult } from "../../../api/types.ts";
 import { createGatewayBrowserClientFixture } from "../chat-application-context.test-support.ts";
-import { createSessionCapabilityFixture } from "../chat-pane.test-support.ts";
+import { createSessionCapabilityFixture } from "../chat-session-capability.test-support.ts";
 import {
   projectWorkspaceCatalog,
   workspaceCatalogChildren,

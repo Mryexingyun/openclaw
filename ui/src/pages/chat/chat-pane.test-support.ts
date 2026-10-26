@@ -53,8 +53,6 @@ import type { ChatTranscript } from "./components/chat-transcript-controller.ts"
 import type { ChatMessageCache } from "./session-message-cache.ts";
 import type { SessionSnapshotStore } from "./session-snapshot-store.ts";
 
-export { createSessionCapabilityFixture } from "./chat-session-capability.test-support.ts";
-
 type PaneHeaderWorkspace = ReturnType<typeof createChatPaneRails>["sessionWorkspace"];
 
 export function createPaneHeaderWorkspaceFixture(

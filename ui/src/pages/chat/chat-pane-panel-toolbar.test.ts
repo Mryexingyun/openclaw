@@ -7,10 +7,10 @@ import { createGatewayBrowserClientFixture } from "./chat-application-context.te
 import { sidebarPanelDefinitions } from "./chat-pane-embedded-panels.ts";
 import {
   createPaneHeaderWorkspaceFixture,
-  createSessionCapabilityFixture,
   createTestChatPane,
   getPaneTestRuntime,
 } from "./chat-pane.test-support.ts";
+import { createSessionCapabilityFixture } from "./chat-session-capability.test-support.ts";
 import {
   chatPaneHeaderSessionMenu,
   mountChatPaneHeader,

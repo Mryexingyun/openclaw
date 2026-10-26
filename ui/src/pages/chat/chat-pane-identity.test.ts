@@ -23,12 +23,12 @@ import { setChatHistoryLoad } from "./chat-history-state.ts";
 import { consumePaneSessionHandoff } from "./chat-pane-shared.ts";
 import {
   createRenderTestChatPane,
-  createSessionCapabilityFixture,
   createTestChatPane,
   connectPaneTestView,
   type TestChatPane,
 } from "./chat-pane.test-support.ts";
 import { chatRunPresentation } from "./chat-run-presentation.ts";
+import { createSessionCapabilityFixture } from "./chat-session-capability.test-support.ts";
 import { disposeChatView, renderChatPropsInto } from "./chat-view.test-helpers.ts";
 import { ChatView } from "./chat-view.tsx";
 import { createComposerQuestions } from "./components/chat-composer-questions.ts";

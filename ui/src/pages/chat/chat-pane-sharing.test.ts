@@ -16,11 +16,8 @@ import {
   createGatewayBrowserClientFixture,
   createSessionContext,
 } from "./chat-application-context.test-support.ts";
-import {
-  createSessionCapabilityFixture,
-  createTestChatPane,
-  type TestChatPane,
-} from "./chat-pane.test-support.ts";
+import { createTestChatPane, type TestChatPane } from "./chat-pane.test-support.ts";
+import { createSessionCapabilityFixture } from "./chat-session-capability.test-support.ts";
 import type { ChatPageHost } from "./chat-state-host.ts";
 import type {
   ChatSessionSharingState,

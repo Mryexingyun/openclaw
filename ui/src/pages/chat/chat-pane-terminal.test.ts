@@ -10,10 +10,10 @@ import { createGatewayBrowserClientFixture as gateway } from "./chat-application
 import {
   activePlacementSession,
   createPaneHeaderWorkspaceFixture,
-  createSessionCapabilityFixture,
   createTestChatPane,
   getPaneTestRuntime,
 } from "./chat-pane.test-support.ts";
+import { createSessionCapabilityFixture } from "./chat-session-capability.test-support.ts";
 import {
   openNativeMenu,
   renderPaneHeaderInto,

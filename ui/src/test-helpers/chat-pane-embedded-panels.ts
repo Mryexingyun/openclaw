@@ -13,7 +13,7 @@ import type { SidebarPanelDefinitionParams } from "../pages/chat/chat-pane-embed
 import { createChatPaneRails } from "../pages/chat/chat-pane-rails.ts";
 import { renderSidebarRegion } from "../pages/chat/chat-pane-sidebar-layout.ts";
 import { SidebarRegionView } from "../pages/chat/chat-pane-sidebar-view.tsx";
-import { createSessionCapabilityFixture } from "../pages/chat/chat-pane.test-support.ts";
+import { createSessionCapabilityFixture } from "../pages/chat/chat-session-capability.test-support.ts";
 import type { ChatPageHost } from "../pages/chat/chat-state-host.ts";
 import { createPageState } from "../pages/chat/chat-state-page.ts";
 import { createChatProps } from "../pages/chat/chat-view.test-helpers.ts";

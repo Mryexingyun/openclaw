@@ -10,7 +10,8 @@ import { sessionsResult } from "../../lib/sessions/session-capability.test-suppo
 import { withSessionMutationOperations } from "../../lib/sessions/session-mutation-operations.ts";
 import { createTestGatewayClient } from "../../test-helpers/gateway-client.ts";
 import { setChatHistoryLoad } from "./chat-history-state.ts";
-import { createSessionCapabilityFixture, createTestChatPane } from "./chat-pane.test-support.ts";
+import { createTestChatPane } from "./chat-pane.test-support.ts";
+import { createSessionCapabilityFixture } from "./chat-session-capability.test-support.ts";
 
 const sessionKey = "agent:main:current";
 const unreadRow = (extra: Partial<GatewaySessionRow> = {}): GatewaySessionRow => ({

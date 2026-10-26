@@ -30,12 +30,12 @@ import {
   preparePaneSessionHandoff,
 } from "./chat-pane-shared.ts";
 import {
-  createSessionCapabilityFixture,
   createTestChatPane,
   createPaneTestHost,
   connectPaneTestView,
   type TestChatPane,
 } from "./chat-pane.test-support.ts";
+import { createSessionCapabilityFixture } from "./chat-session-capability.test-support.ts";
 import type { ChatPageHost } from "./chat-state-host.ts";
 import { getChatComposerState } from "./components/chat-composer-state.ts";
 import { resetChatComposerState } from "./components/chat-composer.tsx";

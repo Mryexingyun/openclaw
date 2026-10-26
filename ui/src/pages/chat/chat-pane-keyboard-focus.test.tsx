@@ -5,7 +5,8 @@ import { registerModalSurface } from "../../components/overlay-registry.ts";
 import { getRenderedModalDialog, installDialogPolyfill } from "../../test-helpers/modal-dialog.ts";
 import { mountSolid } from "../../test-helpers/mount-solid.ts";
 import { createGatewayBrowserClientFixture } from "./chat-application-context.test-support.ts";
-import { createSessionCapabilityFixture, createTestChatPane } from "./chat-pane.test-support.ts";
+import { createTestChatPane } from "./chat-pane.test-support.ts";
+import { createSessionCapabilityFixture } from "./chat-session-capability.test-support.ts";
 import { getChatComposerState } from "./components/chat-composer-state.ts";
 import { isSidebarSlotVisible } from "./sidebar-layout.ts";
 import {

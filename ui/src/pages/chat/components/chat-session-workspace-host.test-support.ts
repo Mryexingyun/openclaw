@@ -1,6 +1,6 @@
 import { vi } from "vitest";
 import { createGatewayBrowserClientFixture } from "../chat-application-context.test-support.ts";
-import { createSessionCapabilityFixture } from "../chat-pane.test-support.ts";
+import { createSessionCapabilityFixture } from "../chat-session-capability.test-support.ts";
 import type { SessionWorkspaceHost } from "./chat-session-workspace-types.ts";
 
 export function createSessionWorkspaceHost(

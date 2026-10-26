@@ -7,11 +7,8 @@ import { sessionsResult } from "../../lib/sessions/session-capability.test-suppo
 import type { SessionState } from "../../lib/sessions/session-capability.ts";
 import { mountSolid } from "../../test-helpers/mount-solid.ts";
 import { createGatewayBrowserClientFixture } from "./chat-application-context.test-support.ts";
-import {
-  createSessionCapabilityFixture,
-  createTestChatPane,
-  nativeHistoryMessage,
-} from "./chat-pane.test-support.ts";
+import { createTestChatPane, nativeHistoryMessage } from "./chat-pane.test-support.ts";
+import { createSessionCapabilityFixture } from "./chat-session-capability.test-support.ts";
 
 afterEach(() => vi.unstubAllGlobals());
 
