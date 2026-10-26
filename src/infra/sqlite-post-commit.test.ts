@@ -31,10 +31,6 @@ function fixture() {
   return { database, rows, write, transaction };
 }
 
-function fail(message: string): never {
-  throw new Error(message);
-}
-
 it.each(["waiting", "active"] as const)(
   "installs a received commit independently of a %s native transaction's rollback",
   (phase) => {
@@ -127,7 +123,9 @@ it("installs every commit receipt even if a prior owner cannot fence its failed 
   transaction(() => {
     write("committed");
     stageSqliteTransactionState(database, {
-      commit: () => fail("legacy installer failed"),
+      commit: () => {
+        throw new Error("legacy installer failed");
+      },
     });
     stageSqliteTransactionState(database, {
       commit: () => (receipt = rows()),

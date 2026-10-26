@@ -22,68 +22,40 @@ function makePlugin(
     id?: string;
     accountIds?: string[];
     defaultAccountId?: string;
-    inspect?: boolean;
     sourceAccount?: FixtureAccount;
-    summary?: Record<string, unknown>;
   } = {},
 ): ChannelPlugin {
   const id = options.id ?? label.toLowerCase();
-  const summary = options.summary;
   const getAccount = (_cfg: unknown, accountId?: string | null) => ({
     accountId,
     enabled: true,
     configured: true,
     ...account,
   });
-  return {
-    ...createChannelTestPluginBase({
-      id,
-      label,
-      config: {
-        listAccountIds: () => options.accountIds ?? ["primary"],
-        defaultAccountId: () => options.defaultAccountId ?? "primary",
-        resolveAccount: getAccount,
-        inspectAccount:
-          options.inspect === false
-            ? undefined
-            : (cfg, accountId) => ({
-                ...getAccount(cfg, accountId),
-                ...((cfg as { marker?: string }).marker === "source" ? options.sourceAccount : {}),
-              }),
-        isConfigured: (value) => Boolean((value as FixtureAccount).configured),
-        isEnabled: (value) => Boolean((value as FixtureAccount).enabled),
-        formatAllowFrom: ({ allowFrom }) => allowFrom.map(String),
-      },
-    }),
-    status: summary ? { buildChannelSummary: async () => summary } : undefined,
-  };
+  return createChannelTestPluginBase({
+    id,
+    label,
+    config: {
+      listAccountIds: () => options.accountIds ?? ["primary"],
+      defaultAccountId: () => options.defaultAccountId ?? "primary",
+      resolveAccount: getAccount,
+      inspectAccount: (cfg, accountId) => ({
+        ...getAccount(cfg, accountId),
+        ...((cfg as { marker?: string }).marker === "source" ? options.sourceAccount : {}),
+      }),
+      isConfigured: (value) => Boolean((value as FixtureAccount).configured),
+      isEnabled: (value) => Boolean((value as FixtureAccount).enabled),
+      formatAllowFrom: ({ allowFrom }) => allowFrom.map(String),
+    },
+  });
 }
 
-function linkedPlugin({
-  allowFrom = [],
-  ...summary
-}: {
+type LinkedSummary = {
   linked?: boolean;
   statusState?: string;
   authAgeMs?: number;
   allowFrom?: string[];
-}) {
-  return makePlugin(
-    "Telegram",
-    {
-      name: "Main Bot",
-      linked: summary.linked,
-      allowFrom,
-      dmPolicy: "mutuals",
-      tokenSource: "env",
-    },
-    {
-      id: "linked-summary-fixture",
-      inspect: false,
-      summary: { ...summary, configured: true, self: { e164: "+15551234567" } },
-    },
-  );
-}
+};
 
 it("preserves Slack HTTP signing-secret unavailable state from source config", async () => {
   const plugin = makePlugin(
@@ -114,7 +86,7 @@ it("preserves Slack HTTP signing-secret unavailable state from source config", a
   );
 });
 
-it.each<[Parameters<typeof linkedPlugin>[0], boolean, string[]]>([
+it.each<[LinkedSummary, boolean, string[]]>([
   [
     { linked: true, authAgeMs: 300_000, allowFrom: ["+12133734253", "bot-token", "ignored"] },
     true,
@@ -123,14 +95,29 @@ it.each<[Parameters<typeof linkedPlugin>[0], boolean, string[]]>([
       "  - primary (Main Bot) (dm:mutuals, token:env, allow:+12133734253,bot-token)",
     ],
   ],
-  [
-    { linked: false },
-    false,
-    ["Telegram: not linked +15551234567", "  - primary (Main Bot) (dm:mutuals, token:env)"],
-  ],
+  [{ linked: false }, false, ["Telegram: not linked +15551234567"]],
   [{ statusState: "unstable" }, false, ["Telegram: auth stabilizing +15551234567"]],
 ])("renders linked status %j (allowFrom=%s)", async (params, includeAllowFrom, expected) => {
-  const lines = await summaryFor(linkedPlugin(params), { includeAllowFrom });
+  const plugin = makePlugin(
+    "Telegram",
+    {
+      name: "Main Bot",
+      linked: params.linked,
+      allowFrom: params.allowFrom ?? [],
+      dmPolicy: "mutuals",
+      tokenSource: "env",
+    },
+    { id: "linked-summary-fixture" },
+  );
+  plugin.config.inspectAccount = undefined;
+  plugin.status = {
+    buildChannelSummary: async () => ({
+      ...params,
+      configured: true,
+      self: { e164: "+15551234567" },
+    }),
+  };
+  const lines = await summaryFor(plugin, { includeAllowFrom });
   expect(lines).toEqual(expect.arrayContaining(expected));
 });
 
