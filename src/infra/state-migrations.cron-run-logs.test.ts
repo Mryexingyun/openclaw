@@ -14,7 +14,7 @@ import {
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import { openNodeSqliteDatabase } from "./node-sqlite.js";
 import { admitSqliteSchema } from "./sqlite-schema-facts.js";
-import { hasLegacyCronRunLogs } from "./state-migrations.cron-run-logs.js";
+import { hasLegacyCronRunLogs } from "./state-legacy-cron-presence.js";
 
 const migrationId = "state:cron-run-logs-to-task-runs:v1";
 const reportSql = "SELECT report_json FROM migration_runs WHERE id = ?";
