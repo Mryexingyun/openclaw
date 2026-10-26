@@ -1,5 +1,6 @@
 import { createHmac } from "node:crypto";
 import { request } from "node:http";
+import { text } from "node:stream/consumers";
 import { HTTPReceiver } from "@slack/bolt";
 import { withServer } from "openclaw/plugin-sdk/test-env";
 import { describe, expect, it, vi } from "vitest";
@@ -56,47 +57,36 @@ function openChunkedRequest(
 function readResponse(req: ReturnType<typeof request>): Promise<HttpResult> {
   return new Promise((resolve, reject) => {
     req.once("response", (res) => {
-      let body = "";
-      res.setEncoding("utf8");
-      res.on("data", (chunk: string) => {
-        body += chunk;
-      });
-      res.once("end", () => resolve({ statusCode: res.statusCode, body }));
+      void text(res).then((body) => resolve({ statusCode: res.statusCode, body }), reject);
     });
     req.once("error", reject);
   });
 }
 
 describe("createSlackHttpRequestHandler", () => {
-  it("rejects an oversized chunked body before Bolt signature verification", async () => {
-    await withSlackHttpServer(async (port) => {
-      const req = openChunkedRequest(port);
-      const response = readResponse(req);
-
-      req.write(Buffer.alloc(768 * 1024, 0x61));
-      req.end(Buffer.alloc(768 * 1024, 0x62));
-
-      await expect(response).resolves.toEqual({
-        statusCode: 413,
-        body: "Payload too large",
+  it.each([
+    ["oversized", 413, "Payload too large"],
+    ["stalled", 408, "Request body timeout"],
+  ] as const)(
+    "rejects a %s body before Bolt signature verification",
+    async (kind, statusCode, body) => {
+      await withSlackHttpServer(async (port) => {
+        const req = openChunkedRequest(port);
+        const response = readResponse(req);
+        try {
+          if (kind === "oversized") {
+            req.write(Buffer.alloc(768 * 1024, 0x61));
+            req.end(Buffer.alloc(768 * 1024, 0x62));
+          } else {
+            req.write("{");
+          }
+          await expect(response).resolves.toEqual({ statusCode, body });
+        } finally {
+          req.destroy();
+        }
       });
-    });
-  });
-
-  it("rejects a stalled body before Bolt's void listener starts reading", async () => {
-    await withSlackHttpServer(async (port) => {
-      const req = openChunkedRequest(port);
-      const response = readResponse(req);
-
-      req.write("{");
-
-      await expect(response).resolves.toEqual({
-        statusCode: 408,
-        body: "Request body timeout",
-      });
-      req.destroy();
-    });
-  });
+    },
+  );
 
   it("preserves Bolt signature verification for requests within the bounds", async () => {
     await withSlackHttpServer(async (port) => {

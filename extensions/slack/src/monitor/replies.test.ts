@@ -75,6 +75,10 @@ function nativeTable(caption: string) {
     rows: [[{ type: "raw_text", text: "Account" }], [{ type: "raw_text", text: "Acme" }]],
   };
 }
+const tableText = (caption: string) => `${caption} (table)\nAccount\nAcme`;
+const blockTypes = (message: SlashTestMessage | undefined) =>
+  message?.blocks?.map((block) => block.type);
+const joinedText = (messages: SlashTestMessage[]) => messages.map(({ text }) => text).join("");
 
 function buttons(label: string, value: string, style?: "primary") {
   return { type: "buttons" as const, buttons: [{ label, value, ...(style ? { style } : {}) }] };
@@ -210,6 +214,20 @@ function slashMessages(respond: ReturnType<typeof vi.fn>, count: number, start =
   return Array.from({ length: count - start }, (_, index) =>
     requireSlashMessage(respond, index + start),
   );
+}
+
+function expectPlainChunks(messages: SlashTestMessage[], limit: number, text: string) {
+  for (const message of messages) {
+    expect(message.blocks).toBeUndefined();
+    expect(message.text.length).toBeLessThanOrEqual(limit);
+  }
+  expect(joinedText(messages)).toBe(text);
+}
+
+function expectMediaHook(content: string) {
+  expect(messageHookRunner.runMessageSent).toHaveBeenCalledOnce();
+  expect(sentEvent()).toMatchObject({ content, success: true });
+  expect(sentEvent()).not.toHaveProperty("messageId");
 }
 
 function rejectNativeBlocks() {
@@ -356,14 +374,8 @@ describe("deliverReplies identity passthrough", () => {
       authoredTextPlacement: "none",
     });
     expect(result).toEqual({ messageId: "chart-ts", channelId: "C123" });
-    expect(messageHookRunner.runMessageSent).toHaveBeenCalledOnce();
-    const event = sentEvent();
-    expect(event).toMatchObject({
-      to: "C123",
-      content: "Revenue summary\n\nRevenue mix (pie chart)\n- Product: 60\n- Services: 40",
-      success: true,
-    });
-    expect(event).not.toHaveProperty("messageId");
+    expectMediaHook(`Revenue summary\n\n${revenueText}`);
+    expect(sentEvent().to).toBe("C123");
   });
 });
 
@@ -402,8 +414,7 @@ describe("deliverSlackSlashReplies chunking", () => {
     const respond = vi.fn(async () => undefined);
     const text = "a".repeat(4205);
     await deliverSlash(respond, [{ text }]);
-    expect(respond).toHaveBeenCalledTimes(1);
-    expect(respond).toHaveBeenCalledWith({ text, response_type: "ephemeral" });
+    expect(respond).toHaveBeenCalledExactlyOnceWith({ text, response_type: "ephemeral" });
   });
 
   it("delivers a valid field-rich section in one slash response", async () => {
@@ -434,24 +445,11 @@ describe("deliverSlackSlashReplies chunking", () => {
     expect(respond).toHaveBeenCalledTimes(2);
     const native = requireSlashMessage(respond, 0);
     const fallback = requireSlashMessage(respond, 1);
-    expect(native.blocks?.map((block) => block.type)).toEqual([
-      "section",
-      "data_visualization",
-      "actions",
-      "data_table",
-    ]);
-    expect(fallback.blocks?.map((block) => block.type)).toEqual([
-      "section",
-      "section",
-      "actions",
-      "section",
-    ]);
-    expect(readPlainSectionTexts(fallback)).toEqual([
-      revenueText,
-      "Pipeline report (table)\nAccount\nAcme",
-    ]);
+    expect(blockTypes(native)).toEqual(["section", "data_visualization", "actions", "data_table"]);
+    expect(blockTypes(fallback)).toEqual(["section", "section", "actions", "section"]);
+    expect(readPlainSectionTexts(fallback)).toEqual([revenueText, tableText("Pipeline report")]);
     expect(fallback.text).toBe(
-      ["Overview", revenueText, "Refresh", "Pipeline report (table)\nAccount\nAcme"].join("\n\n"),
+      ["Overview", revenueText, "Refresh", tableText("Pipeline report")].join("\n\n"),
     );
     expect(fallback.text.match(/Overview/gu)).toHaveLength(1);
     expect(fallback.mrkdwn).toBe(false);
@@ -474,10 +472,7 @@ describe("deliverSlackSlashReplies chunking", () => {
       const respond = vi.fn(async () => response);
       const delivery = deliverSlash(respond, [
         blockReply([
-          {
-            ...nativeRevenueChart,
-            chart: { type: "pie", segments: [revenueSegments[0]] },
-          },
+          { ...nativeRevenueChart, chart: { type: "pie", segments: [revenueSegments[0]] } },
         ]),
       ]);
       await vi.advanceTimersByTimeAsync(30_000);
@@ -495,12 +490,8 @@ describe("deliverSlackSlashReplies chunking", () => {
     const blocks = [nativeTable(caption)] as never;
     await deliverSlash(respond, [blockReply(blocks)]);
     const messages = slashMessages(respond, 2);
-    expect(messages.every((message) => message.blocks === undefined)).toBe(true);
+    expectPlainChunks(messages, 40_000, tableText(caption));
     expect(messages.every((message) => message.mrkdwn === false)).toBe(true);
-    expect(messages.every((message) => message.text.length <= 40_000)).toBe(true);
-    expect(messages.map((message) => message.text).join("")).toBe(
-      `${caption} (table)\nAccount\nAcme`,
-    );
   });
 
   it("keeps 4k native fallback chunks for uncapped Web API delivery", async () => {
@@ -508,17 +499,10 @@ describe("deliverSlackSlashReplies chunking", () => {
     const caption = "c".repeat(9_000);
     const blocks = [nativeTable(caption)] as never;
     await deliverSlash(respond, [blockReply(blocks)], {
-      responseBudget: {
-        respond,
-        remaining: () => undefined,
-      },
+      responseBudget: { respond, remaining: () => undefined },
     });
     const fallback = slashMessages(respond, 4, 1);
-    expect(fallback.every((message) => message.blocks === undefined)).toBe(true);
-    expect(fallback.every((message) => message.text.length <= 4_000)).toBe(true);
-    expect(fallback.map((message) => message.text).join("")).toBe(
-      `${caption} (table)\nAccount\nAcme`,
-    );
+    expectPlainChunks(fallback, 4_000, tableText(caption));
   });
 
   it("batches in-place native fallback at 50 blocks without losing content", async () => {
@@ -535,9 +519,7 @@ describe("deliverSlackSlashReplies chunking", () => {
     expect(fallback.every((message) => message.text.length <= 40_000)).toBe(true);
     expect(fallback.every((message) => message.mrkdwn === false)).toBe(true);
     expect(fallback[0]?.blocks?.[48]?.type).toBe("actions");
-    expect(fallback.flatMap(readPlainSectionTexts).join("")).toBe(
-      `${caption} (table)\nAccount\nAcme`,
-    );
+    expect(fallback.flatMap(readPlainSectionTexts).join("")).toBe(tableText(caption));
     expect(fallback.map((message) => message.text).join("\n")).toContain("Refresh");
   });
 
@@ -556,13 +538,13 @@ describe("deliverSlackSlashReplies chunking", () => {
       },
     ]);
     const messages = slashMessages(respond, 4);
-    expect(messages[0]?.blocks?.map((block) => block.type)).toEqual(["data_visualization"]);
+    expect(blockTypes(messages[0])).toEqual(["data_visualization"]);
     expect(messages[0]?.text).toContain("Revenue mix (pie chart)");
     expect(messages[1]?.blocks).toBeUndefined();
     expect(messages[1]?.text).toContain("Large pipeline (table)");
     expect(messages[1]?.text).toContain("- Account: <@U123>");
     expect(messages[1]?.text).toContain("- Account: account-99");
-    expect(messages[2]?.blocks?.map((block) => block.type)).toEqual(["actions"]);
+    expect(blockTypes(messages[2])).toEqual(["actions"]);
     expect(messages[2]?.text).toBe("Refresh");
     expect(messages[3]).toMatchObject({
       text: "https://example.com/report.png",
@@ -584,8 +566,7 @@ describe("deliverSlackSlashReplies chunking", () => {
         { ephemeral: false },
       ),
     ).rejects.toThrow("response_url delivery budget");
-    expect(respond).toHaveBeenCalledOnce();
-    expect(respond).toHaveBeenCalledWith({
+    expect(respond).toHaveBeenCalledExactlyOnceWith({
       text: "This Slack response is too large to deliver within the remaining response window.",
       response_type: "ephemeral",
     });
@@ -598,8 +579,10 @@ describe("deliverSlackSlashReplies chunking", () => {
       [{ text: "Let me think...", isReasoning: true }, { text: "final answer" }],
       { ephemeral: false },
     );
-    expect(respond).toHaveBeenCalledTimes(1);
-    expect(respond).toHaveBeenCalledWith({ text: "final answer", response_type: "in_channel" });
+    expect(respond).toHaveBeenCalledExactlyOnceWith({
+      text: "final answer",
+      response_type: "in_channel",
+    });
   });
 
   it("emits terminal hooks for successful slash responses", async () => {
@@ -714,10 +697,7 @@ describe("deliverReplies message_sent hook", () => {
       spokenText: "Spoken answer",
       ttsSupplement: { spokenText: "Spoken answer" },
     });
-    expect(messageHookRunner.runMessageSent).toHaveBeenCalledOnce();
-    const event = sentEvent();
-    expect(event).toMatchObject({ content: "Spoken answer", success: true });
-    expect(event).not.toHaveProperty("messageId");
+    expectMediaHook("Spoken answer");
   });
 
   it("preserves accepted media and blocks when a later block projection fails", async () => {

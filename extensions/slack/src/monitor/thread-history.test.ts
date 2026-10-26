@@ -22,6 +22,8 @@ const botText = (text: string) =>
   expect.objectContaining({ text, botId: "BMONITOR", userId: undefined, files: undefined });
 const mrkdwn = (text: string) => ({ type: "mrkdwn", text });
 const section = (text: string) => ({ type: "section", text: mrkdwn(text) });
+const attachedBot = (ts: string, attachment: object) =>
+  botMessage(ts, { attachments: [attachment] });
 
 it("returns bounded channel history chronologically without copying the reversed window", async () => {
   const client = new WebClient();
@@ -144,25 +146,17 @@ describe("resolveSlackThreadHistory", () => {
     {
       name: "attachment and block fallback surfaces",
       messages: [
-        botMessage("1.000", {
-          attachments: [
-            {
-              title: "Low disk",
-              fallback: "Alert",
-              fields: [{ title: "Host", value: "example" }],
-            },
-          ],
+        attachedBot("1.000", {
+          title: "Low disk",
+          fallback: "Alert",
+          fields: [{ title: "Host", value: "example" }],
         }),
         botMessage("2.000", { blocks: [section("Restarting")] }),
-        botMessage("3.000", {
-          attachments: [
-            {
-              blocks: [
-                { type: "header", text: { type: "plain_text", text: "Alert firing" } },
-                { type: "section", fields: [mrkdwn("*host:* example"), mrkdwn("*device:* disk")] },
-                section("Free space below threshold"),
-              ],
-            },
+        attachedBot("3.000", {
+          blocks: [
+            { type: "header", text: { type: "plain_text", text: "Alert firing" } },
+            { type: "section", fields: [mrkdwn("*host:* example"), mrkdwn("*device:* disk")] },
+            section("Free space below threshold"),
           ],
         }),
         { text: "  line one\nline two  ", ts: "4.000" },
