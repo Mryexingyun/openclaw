@@ -2,6 +2,7 @@ import path from "node:path";
 import { expect, it, vi } from "vitest";
 import { withEnvAsync } from "../test-utils/env.js";
 
+// mock-isolation: The built CLI path must never load source TUI fixture entrypoints.
 vi.mock("./tui-pty-runtime-test-support.js", () => {
   throw new Error("built CLI must not load source TUI fixtures");
 });
