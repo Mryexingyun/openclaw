@@ -55,6 +55,7 @@ import {
   type SqliteMutationWorkerValidationOwner,
   type SqliteWorkerWriteAdmission,
 } from "./session-accessor.sqlite-worker-request.js";
+import type { SessionColdBatchInput } from "./session-cold-storage-selection.js";
 import type { SessionColdWorkerData } from "./session-cold-storage-worker.js";
 import { withSessionHistoryWorkerDatabase } from "./session-transcript-worker-runtime.js";
 
@@ -351,6 +352,25 @@ export function runSqliteTranscriptArchiveWorkerOperation<Result>(
     params.assertCurrent?.();
     return spawnSqliteTranscriptArchiveWorkerOperation<Result>(params);
   }, params.signal);
+}
+
+export function prepareSqliteColdArchiveBatch(
+  input: SessionColdBatchInput,
+  assertCurrent: () => void,
+  signal: AbortSignal,
+) {
+  return withSqliteTranscriptArchiveSession(input.databaseOptions, async () => {
+    const result = await runScopedSqliteArchiveOperation(
+      { operation: "cold-prepare", input },
+      createSqliteTranscriptArchiveWorker,
+      (run) =>
+        runExclusiveSqliteTranscriptArchiveWorker(() => {
+          assertCurrent();
+          return run();
+        }, signal),
+    );
+    return result!.results;
+  });
 }
 
 function runSqliteTranscriptArchiveWorker(

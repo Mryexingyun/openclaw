@@ -79,11 +79,6 @@ import {
 import { resolveSessionWorkStartError } from "./session-work-start.js";
 import { prepareTranscriptPayload, TRANSCRIPT_INSERT_BATCH_SIZE } from "./transcript-payload.js";
 
-export type SessionColdPreparationWorkerData = {
-  type: "sqlite-transcript-archive-v2";
-  operation: "cold-prepare";
-  input: SessionColdBatchInput;
-};
 export type SessionColdBatchPrepared = {
   freePages: number;
   protectionKeys: string[];

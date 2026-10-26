@@ -3,6 +3,8 @@ import type { DatabasePathIdentity } from "../../infra/sqlite-worker-identity.js
 import type { SessionLifecycleArchivedTranscript } from "./session-accessor.lifecycle-types.js";
 import type { SessionStateDeleteSnapshot } from "./session-accessor.sqlite-delete-snapshot.types.js";
 import type { TranscriptEvent } from "./session-accessor.types.js";
+import type { SessionColdBatchInput } from "./session-cold-storage-selection.js";
+import type { SessionColdBatchPrepared } from "./session-cold-storage-worker.js";
 import type { SessionArchivePruningRead } from "./session-history-archive-pruning.types.js";
 
 export type SessionStateDeletePlan = {
@@ -127,6 +129,7 @@ export type TranscriptArchivePageResult = {
 };
 
 export type SqliteArchiveOperation =
+  | { operation: "cold-prepare"; input: SessionColdBatchInput }
   | { operation: "materialize"; plans: readonly TranscriptArchiveWorkerPlan[] }
   | { operation: "publish"; plans: readonly TranscriptArchivePublishPlan[] }
   | { operation: "read-page"; plans: readonly TranscriptArchivePagePlan[] }
@@ -142,6 +145,7 @@ export type SqliteArchiveSessionRequest = SqliteArchiveOperation & {
 };
 
 export type SqliteArchiveSessionResponse =
+  | { type: "cold-prepared"; results: SessionColdBatchPrepared[] }
   | TranscriptArchiveWorkerMessage
   | TranscriptArchivePublishWorkerMessage
   | { type: "page-read"; results: Array<TranscriptArchivePageResult | undefined> }

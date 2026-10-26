@@ -23,7 +23,10 @@ import {
 } from "../../state/openclaw-state-db.paths.js";
 import { captureOpenClawStateReadWorkerContext } from "../../state/openclaw-state-worker-context.js";
 import type { OpenClawConfig } from "../types.js";
-import { runSqliteTranscriptArchiveWorkerOperation } from "./session-accessor.sqlite-archive.js";
+import {
+  prepareSqliteColdArchiveBatch,
+  runSqliteTranscriptArchiveWorkerOperation,
+} from "./session-accessor.sqlite-archive.js";
 import type {
   SessionTranscriptReadScope,
   SqliteSessionReclamationDiagnostics,
@@ -40,11 +43,10 @@ import { withSqliteMutationWorkerLifetime } from "./session-accessor.sqlite-work
 import { captureSessionActorStorageOwner } from "./session-actor-storage-binding.js";
 import type { SessionColdRestorationGuard } from "./session-cold-storage-guard.types.js";
 import type { SessionColdReadPreparation } from "./session-cold-storage-read.js";
+import type { SessionColdBatchInput } from "./session-cold-storage-selection.js";
 import { prepareSessionColdStorageTargets } from "./session-cold-storage-targets.js";
 import type {
   SessionColdMutationPlan,
-  SessionColdBatchPrepared,
-  SessionColdPreparationWorkerData,
   SessionColdWorkerData,
 } from "./session-cold-storage-worker.js";
 import type {
@@ -289,7 +291,7 @@ async function archiveSessionColdBatch(
           }
         }
       }
-      const input: SessionColdPreparationWorkerData["input"] = {
+      const input: SessionColdBatchInput = {
         databaseOptions: workerDatabaseOptions(options.databaseOptions),
         admissionIdentities: [
           ...(collectSessionControllerTargets(undefined, options.ownerStorePath).get(
@@ -305,20 +307,14 @@ async function archiveSessionColdBatch(
       const [batch] = await withSqliteMutationWorkerLifetime(
         input.databaseOptions,
         async ({ assertCurrent: assertRequestCurrent, signal }) => {
-          const prepared =
-            await runSqliteTranscriptArchiveWorkerOperation<SessionColdBatchPrepared>({
-              expectedMessageType: "done",
-              signal,
-              assertCurrent: () => {
-                assertRequestCurrent();
-                assertCurrent();
-              },
-              workerData: {
-                type: "sqlite-transcript-archive-v2",
-                operation: "cold-prepare",
-                input,
-              } satisfies SessionColdPreparationWorkerData,
-            });
+          const prepared = await prepareSqliteColdArchiveBatch(
+            input,
+            () => {
+              assertRequestCurrent();
+              assertCurrent();
+            },
+            signal,
+          );
           assertRequestCurrent();
           assertCurrent();
           return prepared;
