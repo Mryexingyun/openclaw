@@ -36,6 +36,10 @@ import {
   resolveManagedUpdateRequester,
 } from "../../infra/update-requester-authority.js";
 import { normalizeControlPlaneUpdateResult } from "../../infra/update-restart-sentinel-payload.js";
+import {
+  readUpdateResultPolicy,
+  sendUpdateResultTelemetry,
+} from "../../infra/update-result-telemetry.js";
 import { readUpdateRunDriver } from "../../infra/update-run-driver.js";
 import {
   adoptUpdateRun,
@@ -223,12 +227,14 @@ export async function admitUpdateCommandRun(params: {
     env,
     busyTimeoutMs: parseUpdateTimeoutMs(params.opts.timeout) ?? DEFAULT_UPDATE_STEP_TIMEOUT_MS,
   };
+  const reportResult = params.opts.dryRun !== true && (await readUpdateResultPolicy(env));
   params.assertCurrent?.();
   const created = createUpdateRun(
     {
       runId: env[UPDATE_RUN_ID_ENV]?.trim() || params.initialization?.runId,
       trigger: "cli",
       preview: params.opts.dryRun === true,
+      reportResult,
       origin: { driver, admission: { owner: "installed" } },
       supersedeStaleIdentityless:
         !env[UPDATE_RUN_ID_ENV]?.trim() && env[POST_CORE_UPDATE_ENV] !== "1",
@@ -454,6 +460,7 @@ export function completeUpdateCommandRun(
         downtimeMs: completion.downtimeMs,
       },
       recordOptions,
+      (payload) => void sendUpdateResultTelemetry(payload, { env: run.env }),
     );
     if (result.verification) {
       result.recovery = finished.verification.recovery ?? undefined;
