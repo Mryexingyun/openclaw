@@ -277,12 +277,7 @@ try {
   );
   await until(async () => {
     assert(node.exitCode === null && node.signalCode === null, "node host exited");
-    for (const kind of ["device", "node"]) {
-      const list = (await call(`${kind}.pair.list`)) as { pending: { requestId: string }[] };
-      for (const entry of list.pending) {
-        await call(`${kind}.pair.approve`, { requestId: entry.requestId });
-      }
-    }
+    // Fresh direct-loopback nodes inherit the connection owner's silent device/surface approval.
     const list = (await call("node.list")) as { nodes: { connected: boolean }[] };
     return list.nodes.some((entry) => entry.connected);
   }, "paired node connection");
@@ -308,7 +303,7 @@ try {
       for (const broadcast of broadcasts.splice(0)) {
         const started = performance.now();
         const list = (await call("node.list")) as { nodes: CatalogNode[] };
-        const entry = list.nodes.find((node) => node.nodeId === broadcast.nodeId);
+        const entry = list.nodes.find((candidate) => candidate.nodeId === broadcast.nodeId);
         assert(entry?.connected, "broadcast must have a live catalog entry");
         assert(
           JSON.stringify(entry.hostStats) === JSON.stringify(broadcast.stats),
@@ -418,7 +413,7 @@ try {
     }, "final sample persistence");
     await until(async () => {
       const list = (await call("node.list")) as { nodes: CatalogNode[] };
-      const entry = list.nodes.find((node) => node.nodeId === latestBroadcast!.nodeId);
+      const entry = list.nodes.find((candidate) => candidate.nodeId === latestBroadcast!.nodeId);
       evidence.offlineCatalogMatches =
         entry?.connected === false &&
         JSON.stringify(entry.hostStats) === JSON.stringify(latestBroadcast!.stats);
