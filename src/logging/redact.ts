@@ -533,6 +533,21 @@ function isPartialShellExpansion(token: string): boolean {
   return false;
 }
 
+// An unbalanced `${NAME` (optionally with a `:-`/`:?`/`:+`/`-` default operator) is a variable
+// *name*, not credential material: the characters are an identifier, so masking it discloses
+// nothing that preserving it would hide. Credential value classes exclude `}` (see
+// HTTP_AUTH_OPAQUE_CREDENTIAL_PATTERN), so a header capture such as `Authorization: Bearer
+// ${MY_TOKEN}` is exactly this shape, and masking it deletes the opener while leaving the closing
+// `}` behind - the same orphan-delimiter corruption this file repairs for assignments. Balanced
+// forms (`${NAME}`) and command substitutions (`$(cat`) are excluded here: the former are masked
+// whole with no orphan left behind, the latter can carry opaque literal credentials in rules such
+// as URL userinfo, so they stay gated on shellReferencePreservingPatterns below.
+const PARTIAL_SHELL_VARIABLE_REFERENCE_RE = /^\$\{[A-Za-z_][A-Za-z0-9_]*(?::?[-=?+][^}]*)?$/u;
+
+function isPartialShellVariableReference(token: string): boolean {
+  return PARTIAL_SHELL_VARIABLE_REFERENCE_RE.test(token.replace(/^\\+/u, ""));
+}
+
 function prepareRedactionCapture(
   { match, groups, input, offset, replacement: policyReplacement }: RedactMatch,
   pattern: ResolvedRedactPattern,
@@ -585,14 +600,21 @@ function prepareRedactionCapture(
       ) {
         return undefined;
       }
-      // Shell-grammar guard, scoped to the shell/env assignment rules that own expansion
-      // semantics (shellReferencePreservingPatterns): masking a partial expansion opener there
-      // would leave an orphan close delimiter and break shell parsing wherever the redacted
-      // text is re-emitted or replayed. See isPartialShellExpansion.
+      // Shell-grammar guard. Two deliberately different widths:
+      //  - shell/env assignment rules (shellReferencePreservingPatterns) keep the full
+      //    partial-expansion exemption, so `TOKEN=$(cat ~/.openclaw/secrets/key)` survives masking
+      //    with its `)` still matched;
+      //  - every other rule only exempts an unbalanced `${NAME` variable reference, which cannot
+      //    hold literal credential material and would otherwise leave an orphan `}` behind
+      //    (e.g. `Authorization: Bearer ${MY_TOKEN}`).
       // Opaque-credential captures (URL userinfo, connection strings, structured auth headers,
-      // operator-configured patterns) are deliberately NOT exempted: in those rules the captured
-      // value is the credential itself, even when it begins with `$(`.
-      if (isShellReferencePattern && isPartialShellExpansion(token)) {
+      // operator-configured patterns) therefore stay masked when the capture is `$(`-shaped:
+      // there the chunk is the credential itself even when it begins with the opener.
+      if (
+        isShellReferencePattern
+          ? isPartialShellExpansion(token)
+          : isPartialShellVariableReference(token)
+      ) {
         return undefined;
       }
       // Assignment values can legitimately include trailing shell/structural characters

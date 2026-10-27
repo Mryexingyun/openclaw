@@ -197,8 +197,9 @@ describe("redactSensitiveText", () => {
       `TOKEN=${openParen}cat ~/.openclaw/secrets/svc-panel-token); code=${openParen}curl -s -o /tmp/svc.json -X POST https://panel.example.test/api/renew)`,
       `OPENAI_API_KEY=${openParen}cat ~/.openclaw/secrets/key)`,
       `export TOKEN=${openParen}cat ~/.secrets/x) && curl -s https://example.test`,
-      // `${MY_TOKEN}` is a balanced expansion, so it never reaches the partial-opener branch and
-      // keeps the pre-existing shell-reference preservation behavior.
+      // `Authorization: Bearer ${MY_TOKEN}` reaches the guard too: the credential value class
+      // excludes `}`, so the capture is the unbalanced `${MY_TOKEN` and masking it would leave an
+      // orphan `}`. It is a bare variable name, so preserving it hides nothing.
       'curl -s -H "Authorization: Bearer ${MY_TOKEN}" https://api.example.test/v1',
     ];
     for (const input of assignmentCases) {
@@ -212,6 +213,12 @@ describe("redactSensitiveText", () => {
     expect(urlOut).not.toBe(urlCredential);
     expect(urlOut).not.toContain(`${openParen}s3cr3t`);
     expect(urlOut).toContain("api.example.test");
+    // A *balanced* variable reference inside an opaque-credential capture stays masked: the
+    // variable-name exemption only ever repairs unbalanced openers that would orphan a delimiter.
+    const urlVarRef = "https://alice:${PASS}@api.example.test/v1";
+    const urlVarOut = redactSensitiveText(urlVarRef, { mode: "tools" });
+    expect(urlVarOut).not.toBe(urlVarRef);
+    expect(urlVarOut).not.toContain("${PASS}");
     const isBalanced = (value: string): boolean =>
       value.split("(").length === value.split(")").length;
     // Quoted values keep their existing hint-masking output (byte-identical to before this
